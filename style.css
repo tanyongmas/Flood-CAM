@@ -1,0 +1,1088 @@
+/* ==========================================================================
+   ระบบเฝ้าระวังอุทกภัย เทศบาลตำบลตันหยงมัส (ESP32-CAM Smart Flood Watch)
+   Clean Light Minimalist Design System & Responsive Styles
+   ========================================================================== */
+
+:root {
+  /* Clean Light Minimal Palette */
+  --bg-app: #f8fafc;
+  --bg-panel: rgba(255, 255, 255, 0.94);
+  --bg-panel-solid: #ffffff;
+  --bg-subtle: #f1f5f9;
+  --bg-subtle-hover: #e2e8f0;
+  
+  --border-light: #e2e8f0;
+  --border-hover: #cbd5e1;
+  --border-focus: #3b82f6;
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+
+  /* Sophisticated Accents */
+  --accent-blue: #2563eb;
+  --accent-blue-hover: #1d4ed8;
+  --accent-blue-light: #eff6ff;
+  
+  --accent-cyan: #0284c7;
+  --accent-green: #059669;
+  --accent-green-light: #ecfdf5;
+  --accent-green-border: #a7f3d0;
+  
+  --accent-amber: #d97706;
+  --accent-amber-light: #fffbeb;
+  
+  --accent-rose: #e11d48;
+  --accent-rose-light: #fff1f2;
+  --accent-rose-border: #fecdd3;
+
+  /* Geometry & Shadows */
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+  --shadow-clean: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 20px 40px -15px rgba(15, 23, 42, 0.16);
+
+  --font-sans: 'Prompt', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ==========================================================================
+   Clean Light Minimal Top Navigation Bar
+   ========================================================================== */
+.topbar {
+  height: 58px;
+  background: var(--bg-panel);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.25rem;
+  z-index: 1000;
+  box-shadow: var(--shadow-sm);
+}
+
+.brand-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, #2563eb, #0284c7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.25);
+  flex-shrink: 0;
+}
+
+.brand-text-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.brand-text-subtitle {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pill-stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-light);
+  padding: 6px 12px;
+  border-radius: 9999px;
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.pill-stat .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.dot.green { 
+  background: var(--accent-green); 
+  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.2); 
+}
+.dot.amber { background: var(--accent-amber); }
+
+.btn-clean {
+  height: 36px;
+  padding: 0 13px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: var(--transition);
+  user-select: none;
+}
+
+.btn-clean:hover {
+  background: var(--bg-subtle-hover);
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+}
+
+.btn-clean.btn-accent {
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+}
+.btn-clean.btn-accent:hover {
+  background: var(--accent-blue-hover);
+  border-color: var(--accent-blue-hover);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+}
+
+/* ==========================================================================
+   Main Viewport & Leaflet Map
+   ========================================================================== */
+.main-wrapper {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+}
+
+#map {
+  width: 100%;
+  height: 100%;
+  background: #f1f5f9;
+  z-index: 10;
+}
+
+/* Map Floating Layer Switcher */
+.map-controls-floating {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 400;
+  display: flex;
+  gap: 4px;
+  background: var(--bg-panel);
+  backdrop-filter: blur(16px);
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-clean);
+}
+
+.btn-layer-switch {
+  padding: 6px 12px;
+  border-radius: var(--radius-xs);
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.btn-layer-switch:hover { color: var(--text-primary); }
+.btn-layer-switch.active {
+  background: var(--accent-blue);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);
+}
+
+/* ==========================================================================
+   Clean Floating Camera Info Card (Top-Left Dock)
+   ========================================================================== */
+.camera-dock {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  width: 320px;
+  background: var(--bg-panel);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  z-index: 400;
+  box-shadow: var(--shadow-clean);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: var(--transition);
+}
+
+.camera-dock-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.cam-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.35;
+}
+
+.cam-meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 3px;
+  font-family: monospace;
+}
+
+.telemetry-water-primary {
+  background: #f8fafc;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xs);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.telemetry-value-lg {
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.telemetry-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.telemetry-box {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xs);
+  padding: 8px 12px;
+}
+
+.telemetry-label {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  display: block;
+  font-weight: 500;
+}
+
+.telemetry-value {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-top: 2px;
+}
+
+/* ==========================================================================
+   Live Stream Player Modal (Centered Dialog Overlay Only)
+   ========================================================================== */
+.live-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.live-modal {
+  position: relative;
+  width: min(840px, 94vw);
+  max-height: 92vh;
+  background: var(--bg-panel-solid);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: 0 25px 60px -10px rgba(15, 23, 42, 0.35);
+  display: flex;
+  flex-direction: column;
+  animation: zoomCenter 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes zoomCenter {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.live-modal-header {
+  padding: 10px 16px;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.live-indicator-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.live-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.live-indicator .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.live-indicator.active {
+  color: var(--accent-rose);
+}
+.live-indicator.active .dot {
+  background: var(--accent-rose);
+  box-shadow: 0 0 0 3px rgba(225, 29, 72, 0.25);
+  animation: pulseDot 1.5s infinite;
+}
+
+@keyframes pulseDot {
+  0% { transform: scale(0.95); opacity: 0.8; }
+  50% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(0.95); opacity: 0.8; }
+}
+
+.cam-id-badge {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-light);
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-family: monospace;
+}
+
+.window-ctrl-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-window-ctrl {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.btn-window-ctrl:hover {
+  background: var(--bg-subtle-hover);
+  color: var(--text-primary);
+}
+
+.btn-window-ctrl.btn-close-ctrl:hover {
+  background: var(--accent-rose-light);
+  border-color: var(--accent-rose-border);
+  color: var(--accent-rose);
+}
+
+.video-container {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  background: #0f172a;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* On-Screen Real-Time Timestamp Overlay (Top-Left) */
+.video-overlay-timestamp {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(15, 23, 42, 0.78);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-xs);
+  padding: 5px 11px;
+  font-family: 'JetBrains Mono', 'Consolas', 'Courier New', monospace;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #ffffff;
+  letter-spacing: 0.03em;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  user-select: none;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.rec-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 0 8px #ef4444;
+  display: inline-block;
+  animation: recPulse 1.2s infinite;
+  flex-shrink: 0;
+}
+
+@keyframes recPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.85); }
+}
+
+.video-container img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.stream-standby-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  gap: 12px;
+}
+
+.placeholder-icon-circle {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+}
+
+.placeholder-text {
+  font-size: 0.85rem;
+  color: #cbd5e1;
+  line-height: 1.4;
+}
+
+.placeholder-text span {
+  font-size: 0.74rem;
+  color: #94a3b8;
+}
+
+.btn-start-stream {
+  background: var(--accent-green);
+  color: #fff;
+  border: none;
+  padding: 9px 20px;
+  border-radius: 9999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: var(--transition);
+  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.35);
+}
+
+.btn-start-stream:hover {
+  background: #047857;
+  transform: translateY(-1px);
+}
+
+/* Video Control Deck */
+.video-control-deck {
+  padding: 12px 16px;
+  background: #ffffff;
+  border-top: 1px solid var(--border-light);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.flash-control-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.flash-control-row label {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 90px;
+}
+
+.flash-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  height: 5px;
+  background: #e2e8f0;
+  border-radius: 3px;
+  outline: none;
+}
+
+.flash-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent-amber);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(217, 119, 6, 0.4);
+  border: 2px solid #fff;
+}
+
+.action-row-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+/* ==========================================================================
+   Leaflet Custom Clean Pin & Clean Popup
+   ========================================================================== */
+.clean-marker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.clean-pin-core {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+  border: 3px solid #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.clean-marker:hover .clean-pin-core {
+  transform: scale(1.12);
+}
+
+.clean-pin-pulse {
+  position: absolute;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: rgba(37, 99, 235, 0.2);
+  animation: clean-pulse 2s infinite;
+}
+
+@keyframes clean-pulse {
+  0% { transform: scale(0.9); opacity: 0.8; }
+  50% { transform: scale(1.25); opacity: 0.2; }
+  100% { transform: scale(0.9); opacity: 0.8; }
+}
+
+/* Clean Leaflet Popup Customization */
+.leaflet-popup-content-wrapper {
+  background: #ffffff !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-lg) !important;
+  padding: 0 !important;
+  overflow: hidden;
+}
+
+.leaflet-popup-content {
+  margin: 14px 16px !important;
+  line-height: 1.4 !important;
+}
+
+.leaflet-popup-tip {
+  background: #ffffff !important;
+  border: 1px solid var(--border-light);
+}
+
+.popup-telemetry-badge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-light);
+  padding: 6px 10px;
+  border-radius: var(--radius-xs);
+  margin: 8px 0;
+  font-size: 0.75rem;
+}
+
+/* ==========================================================================
+   Admin Modal & Authentication Gate (Clean Light Theme)
+   ========================================================================== */
+.admin-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: fadeIn 0.15s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Auth Card (Password Prompt) */
+.auth-card {
+  width: 100%;
+  max-width: 380px;
+  background: #ffffff;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: zoomCenter 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.auth-card-header {
+  padding: 24px 20px 16px;
+  text-align: center;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.auth-icon-circle {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--accent-blue-light);
+  color: var(--accent-blue);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.auth-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.auth-subtitle {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+
+.auth-card-body {
+  padding: 0 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.auth-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.auth-input-wrapper .admin-input {
+  width: 100%;
+  padding-right: 36px;
+}
+
+.btn-toggle-pwd {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  padding: 4px;
+}
+
+.auth-hint {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+
+.auth-hint code {
+  background: var(--bg-subtle);
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-family: monospace;
+  color: var(--accent-blue);
+}
+
+.auth-error-msg {
+  font-size: 0.74rem;
+  color: var(--accent-rose);
+  background: var(--accent-rose-light);
+  border: 1px solid var(--accent-rose-border);
+  padding: 6px 10px;
+  border-radius: var(--radius-xs);
+  margin-top: 6px;
+}
+
+.auth-shake {
+  animation: shake 0.35s ease-in-out;
+  border-color: var(--accent-rose) !important;
+  box-shadow: 0 0 0 3px rgba(225, 29, 72, 0.2) !important;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+
+.auth-card-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* Full Admin Settings Modal */
+.admin-modal {
+  width: 100%;
+  max-width: 580px;
+  background: #ffffff;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+}
+
+.admin-modal-header {
+  padding: 14px 18px;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.admin-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.admin-modal-body {
+  padding: 18px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.admin-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+}
+
+.admin-section-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--accent-blue);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.admin-form-row {
+  display: flex;
+  gap: 12px;
+}
+
+.admin-form-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-form-group label {
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.admin-input {
+  background: #ffffff;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xs);
+  padding: 8px 11px;
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  transition: var(--transition);
+  outline: none;
+}
+
+.admin-input:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.admin-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.admin-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.admin-checkbox-label input[type="checkbox"] {
+  accent-color: var(--accent-blue);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.admin-modal-footer {
+  padding: 12px 18px;
+  background: #f8fafc;
+  border-top: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Map Picker Banner */
+.map-picker-banner {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--accent-blue);
+  color: #fff;
+  border-radius: 9999px;
+  padding: 6px 16px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 1500;
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.4);
+  animation: pulsePicker 1.8s infinite;
+}
+
+@keyframes pulsePicker {
+  0% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.5); }
+  70% { box-shadow: 0 0 0 10px rgba(37, 99, 235, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+}
+
+/* ==========================================================================
+   Responsive Adaptations (Mobile & Tablet)
+   ========================================================================== */
+@media (max-width: 768px) {
+  .topbar {
+    padding: 0 10px;
+    height: 52px;
+  }
+
+  .brand-text-subtitle {
+    display: none;
+  }
+
+  .brand-text-title {
+    font-size: 0.86rem;
+  }
+
+  .pill-stat {
+    padding: 4px 8px;
+    font-size: 0.7rem;
+  }
+
+  .btn-clean {
+    height: 32px;
+    padding: 0 9px;
+    font-size: 0.74rem;
+  }
+
+  .map-controls-floating {
+    top: 10px;
+    right: 10px;
+    padding: 3px;
+  }
+
+  .btn-layer-switch {
+    padding: 4px 8px;
+    font-size: 0.7rem;
+  }
+
+  .camera-dock {
+    top: 10px;
+    left: 10px;
+    width: calc(100% - 20px);
+    max-width: 300px;
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .cam-title {
+    font-size: 0.8rem;
+  }
+
+  .telemetry-value {
+    font-size: 0.95rem;
+  }
+
+  /* Live Stream Modal on Mobile */
+  .live-modal {
+    bottom: 10px;
+    right: 10px;
+    left: 10px;
+    width: auto;
+    max-width: 100%;
+  }
+
+  .live-modal.centered-mode {
+    width: calc(100vw - 20px);
+    max-height: 85vh;
+  }
+
+  .admin-form-row {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .admin-action-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .admin-modal-footer {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .admin-modal-footer > div {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 480px) {
+  .brand-icon {
+    width: 30px;
+    height: 30px;
+  }
+
+  .btn-clean span {
+    display: inline;
+  }
+
+  .camera-dock {
+    max-width: 260px;
+  }
+}

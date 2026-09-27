@@ -1,0 +1,16 @@
+{
+  "rules": {
+    "cameras": {
+      ".read": true,
+      ".write": true
+    },
+    "commands": {
+      ".read": true,
+      ".write": true
+    },
+    "water_logs": {
+      ".read": true,
+      ".write": true
+    }
+  }
+}

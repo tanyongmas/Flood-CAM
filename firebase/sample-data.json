@@ -1,0 +1,83 @@
+{
+  "cameras": {
+    "CAM-TYM-01": {
+      "id": "CAM-TYM-01",
+      "name": "จุดที่ 1: สะพานรถไฟตันหยงมัส (คลองตันหยงมัส)",
+      "lat": 6.2845,
+      "lng": 101.7320,
+      "ip": "192.168.1.101",
+      "mjpeg_url": "http://192.168.1.101:81/stream",
+      "rtsp_url": "rtsp://192.168.1.101:8554/mjpeg/1",
+      "status": "online",
+      "streaming": true,
+      "water_level_cm": 165.4,
+      "warning_threshold_cm": 180.0,
+      "critical_threshold_cm": 230.0,
+      "battery_v": 4.15,
+      "solar_charging": true,
+      "last_updated": "2026-09-26T21:45:00Z",
+      "last_snapshot": "https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=640&q=80"
+    },
+    "CAM-TYM-02": {
+      "id": "CAM-TYM-02",
+      "name": "จุดที่ 2: สะพานจันทร์ประภัสร์ (ชุมชนเสี่ยงภัย)",
+      "lat": 6.2882,
+      "lng": 101.7365,
+      "ip": "192.168.1.102",
+      "mjpeg_url": "http://192.168.1.102:81/stream",
+      "rtsp_url": "rtsp://192.168.1.102:8554/mjpeg/1",
+      "status": "standby",
+      "streaming": false,
+      "water_level_cm": 142.0,
+      "warning_threshold_cm": 170.0,
+      "critical_threshold_cm": 220.0,
+      "battery_v": 3.98,
+      "solar_charging": false,
+      "last_updated": "2026-09-26T21:40:00Z",
+      "last_snapshot": "https://images.unsplash.com/photo-1518837695005-2083093ee35b?w=640&q=80"
+    },
+    "CAM-TYM-03": {
+      "id": "CAM-TYM-03",
+      "name": "จุดที่ 3: ประตูระบายน้ำคลองตันหยงมัส (สายบุรี)",
+      "lat": 6.2798,
+      "lng": 101.7280,
+      "ip": "192.168.1.103",
+      "mjpeg_url": "http://192.168.1.103:81/stream",
+      "rtsp_url": "rtsp://192.168.1.103:8554/mjpeg/1",
+      "status": "warning",
+      "streaming": true,
+      "water_level_cm": 195.8,
+      "warning_threshold_cm": 180.0,
+      "critical_threshold_cm": 240.0,
+      "battery_v": 4.02,
+      "solar_charging": true,
+      "last_updated": "2026-09-26T21:47:00Z",
+      "last_snapshot": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=640&q=80"
+    },
+    "CAM-TYM-04": {
+      "id": "CAM-TYM-04",
+      "name": "จุดที่ 4: ชุมชนตลาดสดตันหยงมัส (พื้นที่ลุ่มต่ำ)",
+      "lat": 6.2865,
+      "lng": 101.7410,
+      "ip": "192.168.1.104",
+      "mjpeg_url": "http://192.168.1.104:81/stream",
+      "rtsp_url": "rtsp://192.168.1.104:8554/mjpeg/1",
+      "status": "online",
+      "streaming": false,
+      "water_level_cm": 110.2,
+      "warning_threshold_cm": 160.0,
+      "critical_threshold_cm": 200.0,
+      "battery_v": 4.18,
+      "solar_charging": true,
+      "last_updated": "2026-09-26T21:48:00Z",
+      "last_snapshot": "https://images.unsplash.com/photo-1473448912268-2022ce9509d8?w=640&q=80"
+    }
+  },
+  "commands": {
+    "CAM-TYM-01": {
+      "action": "wake_stream",
+      "duration": 180,
+      "timestamp": 1758900000000
+    }
+  }
+}

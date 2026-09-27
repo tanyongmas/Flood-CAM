@@ -1,0 +1,24 @@
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Editor & IDE files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Build artifacts
+*.hex
+*.bin
+*.elf
+*.o
+*.d
+build/
+output/
+scratch/
+
+# Logs
+*.log
+npm-debug.log*

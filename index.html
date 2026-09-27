@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบเฝ้าระวังอุทกภัยและกล้องสด ESP32-CAM | เทศบาลตำบลตันหยงมัส</title>
+  <meta name="description" content="ระบบตรวจวัดระดับน้ำและรายงานสถานการณ์อุทกภัย เทศบาลตำบลตันหยงมัส อ.ระแงะ จ.นราธิวาส กล้องสตรีมภาพสด ESP32-CAM">
+
+  <!-- Fonts: Prompt & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Prompt:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
+  <!-- Clean Minimal Stylesheet -->
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <!-- Top Navigation Bar -->
+  <header class="topbar">
+    <div class="brand-wrapper">
+      <div class="brand-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-text-title">เทศบาลตำบลตันหยงมัส &bull; ระบบเฝ้าระวังอุทกภัย</div>
+        <div class="brand-text-subtitle">อ.ระแงะ จ.นราธิวาส | ESP32-CAM Smart Flood Watch</div>
+      </div>
+    </div>
+
+    <div class="topbar-actions">
+      <div class="pill-stat">
+        <span class="dot green"></span>
+        <span id="statCamStatus">กล้องออนไลน์</span>
+      </div>
+      <button class="btn-clean" onclick="syncRealData()" title="ดึงข้อมูลล่าสุดจากกล้องและคลาวด์">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M23 4v6h-6M1 20v-6h6"></path>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+        </svg>
+        <span>รีเฟรช</span>
+      </button>
+      <button class="btn-clean btn-accent" id="btnAdminModal" onclick="promptAdminAuth()" title="ตั้งค่าระบบและกล้อง (Admin Settings)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+        <span>แอดมิน</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Viewport -->
+  <main class="main-wrapper">
+
+    <!-- Leaflet Map -->
+    <div id="map"></div>
+
+    <!-- Floating Map Layer Switcher -->
+    <div class="map-controls-floating">
+      <button class="btn-layer-switch active" data-layer="osm" onclick="switchMapLayer('osm')">แผนที่ OSM</button>
+      <button class="btn-layer-switch" data-layer="satellite" onclick="switchMapLayer('satellite')">ภาพดาวเทียม</button>
+      <button class="btn-layer-switch" data-layer="dark" onclick="switchMapLayer('dark')">โหมดมืด</button>
+    </div>
+
+    <!-- Floating Camera Info Card (Top-Left) -->
+    <div class="camera-dock">
+      <div class="camera-dock-header">
+        <div>
+          <div class="cam-title" id="dockCamName">จุดที่ 1: ถนนประชาสามัคคี ชุมชนตลาดกลางผลไม้</div>
+          <div class="cam-meta" id="dockCamMeta">CAM-TYM-01 &bull; IP: 192.168.1.36</div>
+        </div>
+      </div>
+
+      <!-- ระดับน้ำปัจจุบัน (เด่นชัด) -->
+      <div class="telemetry-water-primary">
+        <span class="telemetry-label">ระดับน้ำปัจจุบัน</span>
+        <div class="telemetry-value-lg" id="dockWaterLevel" style="color:var(--accent-green);">-- ซม.</div>
+      </div>
+
+      <!-- ระดับเตือนภัย และ ระดับตลิ่ง -->
+      <div class="telemetry-row">
+        <div class="telemetry-box">
+          <span class="telemetry-label">ระดับการเตือนภัย</span>
+          <div class="telemetry-value" id="dockAlertLevel" style="color:var(--accent-amber);">180.0 ซม.</div>
+        </div>
+        <div class="telemetry-box">
+          <span class="telemetry-label">ระดับตลิ่ง</span>
+          <div class="telemetry-value" id="dockBankLevel" style="color:var(--accent-rose);">250.0 ซม.</div>
+        </div>
+      </div>
+
+      <div style="font-size:0.7rem; color:var(--text-muted); display:flex; justify-content:space-between;">
+        <span id="dockLastSync">อัปเดต: เชื่อมต่อพร้อมใช้งาน</span>
+        <span id="dockRssi">สัญญาณ: ดี</span>
+      </div>
+    </div>
+
+    <!-- Live Stream Player Modal (Centered Modal Only) -->
+    <div class="live-modal-backdrop" id="liveModalBackdrop" style="display:none;" onclick="handleLiveBackdropClick(event)">
+      <div class="live-modal centered-mode" id="liveModal">
+        <div class="live-modal-header">
+          <div class="live-indicator-wrapper">
+            <div class="live-indicator" id="liveIndicator">
+              <span class="dot"></span>
+              <span id="liveStatusText">โหมดสแตนด์บาย (Standby)</span>
+            </div>
+            <span class="cam-id-badge" id="streamCamIdTag">CAM-TYM-01 &bull; 192.168.1.109</span>
+            <span class="cam-id-badge" id="streamModeBadge" onclick="cycleLiveStreamMode()" title="คลิกเพื่อสลับโหมด: วงใน (RTSP) / 4G (Cloud Relay)" style="cursor:pointer; background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; font-weight:700;">
+              🏠 วงใน RTSP
+            </span>
+          </div>
+
+          <div class="window-ctrl-actions">
+            <button class="btn-window-ctrl btn-close-ctrl" onclick="closeLiveModal()" title="ปิดหน้าต่างสตรีม (✕)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Video Feed Display -->
+        <div class="video-container" id="videoContainer">
+          <!-- On-Screen Real-Time Timestamp Overlay (Top-Left) -->
+          <div class="video-overlay-timestamp" id="videoTimestamp" style="display:none;">
+            <span class="rec-dot"></span>
+            <span id="videoTimestampText">--/--/---- --:--:--</span>
+          </div>
+
+          <!-- ภาพสตรีมสดจริง (จะเริ่มโหลดเมื่อกดปุ่มเริ่ม) -->
+          <img id="liveStreamImg" src="" alt="ESP32-CAM Stream" style="display:none;">
+
+          <!-- หน้าต่างพักรอสตรีม (Clean Placeholder) -->
+          <div class="stream-standby-placeholder" id="streamPlaceholder">
+            <div class="placeholder-icon-circle">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <rect x="2" y="2" width="20" height="20" rx="3"></rect>
+                <circle cx="12" cy="12" r="3.5"></circle>
+                <circle cx="17.5" cy="6.5" r="1" fill="currentColor"></circle>
+              </svg>
+            </div>
+            <div class="placeholder-text">
+              กล้องอยู่ในโหมดประหยัดพลังงาน<br>
+              <span>กดปุ่มด้านล่างเพื่อเริ่มดึงภาพสดจากกล้อง</span>
+            </div>
+            <button class="btn-start-stream" onclick="startLiveStream()">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+              <span>เริ่มดูภาพสด (Live Stream)</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Control Deck -->
+        <div class="video-control-deck">
+          <!-- Flash Light Slider (Instant PWM Control) -->
+          <div class="flash-control-row">
+            <label>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--accent-amber);">
+                <circle cx="12" cy="12" r="5"></circle>
+                <line x1="12" y1="1" x2="12" y2="3"></line>
+                <line x1="12" y1="21" x2="12" y2="23"></line>
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+              </svg>
+              <span>ไฟแฟลช <strong id="flashValText" style="color:var(--accent-amber);">0%</strong></span>
+            </label>
+            <input type="range" class="flash-slider" id="flashSlider" min="0" max="100" value="0" oninput="changeFlashBrightness(this.value)">
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="action-row-buttons">
+            <button class="btn-clean" id="btnToggleStream" onclick="toggleStreamState()" style="flex:1;">
+              ▶ เริ่มดูภาพสด
+            </button>
+            <button class="btn-clean" onclick="takeSnapshot()" title="บันทึกภาพถ่ายปัจจุบัน">
+              📸 ถ่ายภาพ
+            </button>
+            <button class="btn-clean" onclick="copyRtspUrl()" title="คัดลอก RTSP URL">
+              📋 RTSP
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Map Coordinate Picker Notification Bar -->
+    <div class="map-picker-banner" id="mapPickerBanner" style="display:none;">
+      <span>📍 คลิกบนแผนที่ตรงจุดที่ต้องการตั้งกล้อง</span>
+      <button class="btn-clean" onclick="cancelMapPicker()" style="height:28px; font-size:0.72rem; padding:0 8px;">ยกเลิก</button>
+    </div>
+
+    <!-- Admin Authentication Modal (Password Gate) -->
+    <div class="admin-modal-backdrop" id="adminAuthBackdrop" style="display:none;" onclick="handleAuthBackdropClick(event)">
+      <div class="auth-card" id="adminAuthModal">
+        <div class="auth-card-header">
+          <div class="auth-icon-circle">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+          </div>
+          <div class="auth-title">ยืนยันสิทธิ์ผู้ดูแลระบบ</div>
+          <div class="auth-subtitle">ระบบเฝ้าระวังอุทกภัย เทศบาลตำบลตันหยงมัส</div>
+        </div>
+
+        <form onsubmit="submitAdminAuth(event)" class="auth-card-body">
+          <div class="admin-form-group">
+            <label for="adminAuthPassword">รหัสผ่านแอดมิน</label>
+            <div class="auth-input-wrapper">
+              <input type="password" id="adminAuthPassword" class="admin-input" placeholder="ระบุรหัสผ่าน..." autocomplete="current-password" required>
+              <button type="button" class="btn-toggle-pwd" onclick="togglePasswordVisibility('adminAuthPassword')" title="แสดง/ซ่อนรหัสผ่าน">
+                👁️
+              </button>
+            </div>
+            <div class="auth-hint">รหัสผ่านเริ่มต้น: <code>admin1234</code></div>
+            <div class="auth-error-msg" id="authErrorMsg" style="display:none;">
+              ⚠️ รหัสผ่านไม่ถูกต้อง กรุณาระบุใหม่
+            </div>
+          </div>
+
+          <div class="auth-card-footer">
+            <button type="button" class="btn-clean" onclick="closeAdminAuth()">ยกเลิก</button>
+            <button type="submit" class="btn-clean btn-accent">เข้าสู่การตั้งค่า</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Admin Configuration Modal -->
+    <div class="admin-modal-backdrop" id="adminModalBackdrop" style="display:none;" onclick="handleBackdropClick(event)">
+      <div class="admin-modal" id="adminModal">
+        <div class="admin-modal-header">
+          <div class="admin-modal-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            <span>ตั้งค่าระบบและกล้องตรวจวัด (Admin Settings)</span>
+          </div>
+          <button class="btn-clean" onclick="closeAdminModal()" style="border:none; padding:4px 8px;" title="ปิดหน้าต่าง">✕</button>
+        </div>
+
+        <div class="admin-modal-body">
+          <!-- Section 1: ข้อมูลจุดติดตั้งและพิกัด -->
+          <div class="admin-section">
+            <div class="admin-section-title">
+              <span>📍 ข้อมูลจุดติดตั้งและพิกัดแผนที่</span>
+            </div>
+            <div class="admin-form-group">
+              <label for="cfgCamName">ชื่อจุดติดตั้งกล้อง</label>
+              <input type="text" id="cfgCamName" class="admin-input" placeholder="เช่น จุดที่ 1: ถนนประชาสามัคคี ชุมชนตลาดกลางผลไม้">
+            </div>
+            <div class="admin-form-row">
+              <div class="admin-form-group">
+                <label for="cfgCamId">รหัสกล้อง (Camera ID)</label>
+                <input type="text" id="cfgCamId" class="admin-input" placeholder="CAM-TYM-01">
+              </div>
+              <div class="admin-form-group">
+                <label for="cfgAlertThreshold">ระดับเตือนภัย (ซม.)</label>
+                <input type="number" id="cfgAlertThreshold" class="admin-input" placeholder="180">
+              </div>
+              <div class="admin-form-group">
+                <label for="cfgBankLevel">ระดับตลิ่ง (ซม.)</label>
+                <input type="number" id="cfgBankLevel" class="admin-input" placeholder="250">
+              </div>
+            </div>
+            <div class="admin-form-row">
+              <div class="admin-form-group">
+                <label for="cfgLat">ละติจูด (Latitude)</label>
+                <input type="number" step="0.000001" id="cfgLat" class="admin-input" placeholder="6.2845">
+              </div>
+              <div class="admin-form-group">
+                <label for="cfgLng">ลองจิจูด (Longitude)</label>
+                <input type="number" step="0.000001" id="cfgLng" class="admin-input" placeholder="101.7340">
+              </div>
+            </div>
+            <div class="admin-action-row" style="margin-top:6px;">
+              <button class="btn-clean" onclick="startPickLocationOnMap()">
+                📍 จิ้มเลือกพิกัดบนแผนที่
+              </button>
+              <label class="admin-checkbox-label">
+                <input type="checkbox" id="cfgDraggableMarker" onchange="toggleDraggableMarker(this.checked)">
+                <span>เปิดโหมดลากหมุดบนแผนที่ได้อิสระ</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Section 2: การเชื่อมต่อเน็ตเวิร์กและพอร์ต -->
+          <div class="admin-section">
+            <div class="admin-section-title">
+              <span>🌐 การเชื่อมต่อเน็ตเวิร์ก & พอร์ตสตรีม (Network Ports)</span>
+            </div>
+            <div class="admin-form-row">
+              <div class="admin-form-group" style="flex:2;">
+                <label for="cfgCamIp">IP Address กล้องในเครือข่าย</label>
+                <input type="text" id="cfgCamIp" class="admin-input" placeholder="192.168.1.36">
+              </div>
+              <div class="admin-form-group">
+                <label for="cfgControlPort">พอร์ตควบคุม (Control)</label>
+                <input type="number" id="cfgControlPort" class="admin-input" value="80">
+              </div>
+            </div>
+            <div class="admin-form-row">
+              <div class="admin-form-group">
+                <label for="cfgStreamPort">พอร์ตสตรีมภาพ (MJPEG)</label>
+                <input type="number" id="cfgStreamPort" class="admin-input" value="81">
+              </div>
+              <div class="admin-form-group">
+                <label for="cfgRtspPort">พอร์ตสตรีมวิดีโอ (RTSP)</label>
+                <input type="number" id="cfgRtspPort" class="admin-input" value="8554">
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 3: ตั้งค่า Wi-Fi ของกล้อง และโหมดการสตรีมภาพ -->
+          <div class="admin-section">
+            <div class="admin-section-title">
+              <span>📡 เครือข่าย Wi-Fi ของกล้อง & โหมดการสตรีม</span>
+            </div>
+
+            <div class="admin-form-group">
+              <label for="cfgNetworkMode">โหมดการสตรีมภาพ (Streaming Mode)</label>
+              <select id="cfgNetworkMode" class="admin-input" style="background:#fff; font-weight:600;" onchange="handleNetworkModeChange(this.value)">
+                <option value="auto">🔄 อัตโนมัติ (ตรวจสอบวงในก่อน หากไม่พบจะสลับเข้า 4G Cloud Relay)</option>
+                <option value="local">🏠 วงเดียวกัน (TMSTUDIO) - สตรีมสด RTSP / HTTP MJPEG 25 FPS</option>
+                <option value="cloud">☁️ 4G วงนอก (199X) - Google Apps Script Cloud Snapshot Relay</option>
+              </select>
+            </div>
+
+            <div class="admin-form-group" style="margin-top:8px;">
+              <label>เลือกโปรไฟล์ Wi-Fi ด่วน (Wi-Fi Quick Preset)</label>
+              <div style="display:flex; gap:6px; margin-top:4px;">
+                <button type="button" class="btn-clean" onclick="applyWifiPreset('local')" style="flex:1; font-size:0.75rem; padding:6px 4px; background:#eff6ff; color:#2563eb; border-color:#bfdbfe;" title="SSID: TMSTUDIO / Pass: 026830TM">
+                  🏠 วงใน (TMSTUDIO)
+                </button>
+                <button type="button" class="btn-clean" onclick="applyWifiPreset('4g')" style="flex:1; font-size:0.75rem; padding:6px 4px; background:#f0fdf4; color:#16a34a; border-color:#bbf7d0;" title="SSID: 199X / Pass: 5910110106">
+                  🌐 4G วงนอก (199X)
+                </button>
+              </div>
+            </div>
+
+            <div class="admin-form-row" style="margin-top:6px;">
+              <div class="admin-form-group" style="flex:1.2;">
+                <label for="cfgWifiSsid">ชื่อ Wi-Fi ของกล้อง (SSID)</label>
+                <input type="text" id="cfgWifiSsid" class="admin-input" placeholder="TMSTUDIO หรือ 199X">
+              </div>
+              <div class="admin-form-group" style="flex:1;">
+                <label for="cfgWifiPass">รหัสผ่าน Wi-Fi</label>
+                <input type="text" id="cfgWifiPass" class="admin-input" placeholder="รหัสผ่าน Wi-Fi">
+              </div>
+            </div>
+
+            <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:0.72rem; color:var(--text-muted);">* บันทึกลง Flash Memory บนตัวกล้อง</span>
+              <button type="button" class="btn-clean btn-accent" onclick="sendWifiConfigToCamera()" style="font-size:0.75rem; padding:6px 12px; background:#0284c7; color:#fff;" title="ส่งคำสั่งเปลี่ยน Wi-Fi ไปยัง ESP32-CAM">
+                📶 ส่งค่า Wi-Fi ไปที่กล้อง (Apply)
+              </button>
+            </div>
+            <div id="wifiSendStatus" style="display:none; font-size:0.75rem; margin-top:6px; padding:6px 8px; border-radius:6px;"></div>
+          </div>
+
+          <!-- Section 4: การเชื่อมต่อ Google Cloud (วิธีที่ 1) & ความปลอดภัย -->
+          <div class="admin-section">
+            <div class="admin-section-title">
+              <span>☁️ คลาวด์รีเลย์ Google Apps Script & ความปลอดภัย</span>
+            </div>
+            <div class="admin-form-group">
+              <label for="cfgGasUrl">Google Apps Script Exec URL (Snapshot Relay)</label>
+              <input type="text" id="cfgGasUrl" class="admin-input" placeholder="https://script.google.com/macros/s/.../exec">
+            </div>
+            <div class="admin-form-group" style="margin-top:8px;">
+              <label for="cfgAdminPassword">เปลี่ยนรหัสผ่านแอดมิน (Admin Password)</label>
+              <input type="text" id="cfgAdminPassword" class="admin-input" placeholder="ค่าเริ่มต้น: admin1234">
+            </div>
+          </div>
+        </div>
+
+        <div class="admin-modal-footer">
+          <div style="display:flex; gap:8px;">
+            <button class="btn-clean" onclick="resetAdminSettingsToDefault()" style="color:var(--text-muted);" title="คืนค่าเดิมจากโรงงาน">
+              รีเซ็ตค่าเริ่มต้น
+            </button>
+            <button class="btn-clean" onclick="testCameraPing()" title="ตรวจสอบว่าติดต่อกล้องได้หรือไม่">
+              ⚡ ทดสอบเชื่อมต่อ
+            </button>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn-clean" onclick="closeAdminModal()">
+              ยกเลิก
+            </button>
+            <button class="btn-clean btn-accent" onclick="saveAdminSettings()">
+              💾 บันทึกการตั้งค่า
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <!-- Application Logic -->
+  <script src="app.js"></script>
+</body>
+
+</html>
