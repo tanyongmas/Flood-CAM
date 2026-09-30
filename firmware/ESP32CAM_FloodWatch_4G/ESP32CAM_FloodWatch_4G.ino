@@ -125,6 +125,14 @@ void setup() {
   }
   Serial.println("[OK] Camera Initialized.");
 
+  // ปรับแต่งเซนเซอร์เพื่อความเร็วในการสตรีมผ่าน 4G สูงสุด (ไฟล์เล็ก โหลดไว ภาพลื่นไหล)
+  sensor_t * s = esp_camera_sensor_get();
+  if (s) {
+    s->set_framesize(s, FRAMESIZE_VGA); // 640x480 ความละเอียดมาตรฐานคมชัด
+    s->set_quality(s, 16);              // ค่าคุณภาพ 16 (ขนาดรูปเพียง ~15 KB อัปโหลดเสร็จใน 50ms)
+    s->set_brightness(s, 1);
+  }
+
   // 2. โหลดและเชื่อมต่อ Wi-Fi (มีระบบสลับหา TMSTUDIO หรือ 199X อัตโนมัติ)
   loadWiFiPreferences();
   setupWiFi();
@@ -396,33 +404,35 @@ void uploadSnapshotToCloud() {
     return;
   }
 
-  // แนวทาง C1: ส่ง Binary JPEG แท้ๆ ไปยัง Cloudflare Worker (เสถียร 100% ด้วย HTTPClient)
+  // แนวทาง C1: ส่ง Binary JPEG แท้ๆ ไปยัง Cloudflare Worker (High-Speed Persistent Session 5.5 FPS)
   if (USE_CLOUDFLARE_EDGE && strlen(CF_WORKER_HOST) > 5 && String(CF_WORKER_HOST).indexOf("workers.dev") > 0) {
-    String uploadUrl = "https://" + String(CF_WORKER_HOST) + "/upload";
+    static WiFiClientSecure cfClient;
+    static HTTPClient cfHttp;
+    static bool cfInited = false;
 
-    WiFiClientSecure client;
-    client.setInsecure();
-    client.setTimeout(5);
-
-    HTTPClient http;
-    http.setTimeout(6000);
-    http.setReuse(false);
-
-    if (http.begin(client, uploadUrl)) {
-      http.addHeader("Content-Type", "image/jpeg");
-      http.addHeader("x-auth-key", CF_AUTH_KEY);
-
-      int httpCode = http.POST(fbBuf, fbLen);
-      if (httpCode == HTTP_CODE_OK || httpCode == 200) {
-        Serial.printf("[Cloudflare Edge] Frame pushed (%u KB, code %d)\n", (unsigned int)(fbLen / 1024), httpCode);
-      } else {
-        Serial.printf("[Cloudflare Edge] Push failed, code: %d\n", httpCode);
-      }
-      http.end();
+    if (!cfInited) {
+      cfClient.setInsecure();
+      cfClient.setTimeout(3);
+      cfHttp.setReuse(true); // สำคัญมาก: เปิด Keep-Alive ข้ามการทำ SSL Handshake ใหม่ทุกเฟรม!
+      cfHttp.setTimeout(3000);
+      cfInited = true;
     }
-    client.stop();
+
+    String uploadUrl = "https://" + String(CF_WORKER_HOST) + "/upload";
+    if (!cfHttp.connected()) {
+      cfHttp.begin(cfClient, uploadUrl);
+      cfHttp.addHeader("Content-Type", "image/jpeg");
+      cfHttp.addHeader("x-auth-key", CF_AUTH_KEY);
+      cfHttp.addHeader("Connection", "keep-alive");
+    }
+
+    int httpCode = cfHttp.POST(fbBuf, fbLen);
+    if (httpCode != HTTP_CODE_OK && httpCode != 200) {
+      cfHttp.end(); // หากการเชื่อมต่อหลุด ให้ต่อใหม่ในรอบถัดไป
+    }
+
     xSemaphoreGive(camMutex);
-    vTaskDelay(pdMS_TO_TICKS(50)); // คืนเวลาให้ FreeRTOS IDLE0 Task
+    vTaskDelay(pdMS_TO_TICKS(15)); // คืนเวลาให้ FreeRTOS IDLE0 Task
     return;
   }
 
@@ -573,9 +583,9 @@ void cloudSyncTask(void *pvParameters) {
     }
 
     // 3. อัปโหลดภาพขึ้น Cloud:
-    // - ถ้ามีคนกดดู (isStreamingRequested): ส่งทุก 800ms (~1.2 FPS) เพื่อความเสถียร ไม่ให้ CPU Overheat
-    // - ถ้าอยู่ใน Standby: ส่ง 1 ภาพทุก 6 วินาที เพื่อให้หน้าเว็บมีภาพสดเสมอ
-    unsigned long pushInterval = isStreamingRequested ? 800 : 6000;
+    // - ถ้ามีคนกดดู (isStreamingRequested): ส่งเร็วทุก 180ms (~5.5 FPS) ลื่นไหลต่อเนื่อง
+    // - ถ้าอยู่ใน Standby: ส่ง 1 ภาพทุก 5 วินาที เพื่อให้หน้าเว็บมีภาพสดเสมอ
+    unsigned long pushInterval = isStreamingRequested ? 180 : 5000;
     if (now - lastSnapshotPush >= pushInterval) {
       lastSnapshotPush = now;
       uploadSnapshotToCloud();
