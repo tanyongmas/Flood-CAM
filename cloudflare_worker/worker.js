@@ -1,26 +1,22 @@
 /**
- * Cloudflare Worker: Flood-CAM High-Speed Edge Relay
+ * Cloudflare Worker: Flood-CAM High-Speed Edge Relay (v2 - Durable Cache & Instant Wake)
  * เทศบาลตำบลตันหยงมัส (Tanyongmat Municipality Flood Monitoring)
- * 
- * คุณสมบัติ:
- * 1. รับภาพ Binary JPEG แท้ๆ จาก ESP32-CAM ผ่าน POST /upload (ไม่ต้องแปลง Base64)
- * 2. ให้หน้าเว็บเบราว์เซอร์/มือถือ 4G/5G ดึงภาพสดผ่าน GET /latest.jpg ด้วยความเร็ว 5-10 FPS
- * 3. มี API ตรวจสอบสถานะออนไลน์ของกล้อง GET /status
  */
 
-// Memory Cache สำหรับเก็บบัฟเฟอร์รูปภาพล่าสุด
-let cachedFrame = null;
+let memoryFrame = null;
 let lastFrameTime = 0;
 let frameCount = 0;
+let wakeUntil = 0;
 
-// Token ความปลอดภัยสำหรับให้เฉพาะ ESP32-CAM ของเราส่งภาพได้
 const AUTH_KEY = "TMSTUDIO_SECURE_TOKEN";
+const CACHE_URL = "https://floodcam.internal/latest.jpg";
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    const cache = caches.default;
 
-    // รองรับ CORS Preflight
+    // 1. CORS Preflight
     if (request.method === "OPTIONS") {
       return new Response(null, {
         headers: {
@@ -33,32 +29,43 @@ export default {
     }
 
     // ==========================================
-    // 1. ESP32-CAM ส่งภาพดิบ (Binary JPEG) ขึ้นมา
+    // 2. ESP32-CAM ส่งภาพ Binary JPEG ขึ้นมา
     // ==========================================
     if (request.method === "POST" && url.pathname === "/upload") {
       const auth = request.headers.get("x-auth-key");
       if (auth !== AUTH_KEY) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), { 
           status: 401, 
-          headers: { "Content-Type": "application/json" } 
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } 
         });
       }
 
       try {
-        cachedFrame = await request.arrayBuffer();
-        lastFrameTime = Date.now();
-        frameCount++;
+        const rawBuffer = await request.arrayBuffer();
+        if (rawBuffer.byteLength > 100) {
+          memoryFrame = rawBuffer;
+          lastFrameTime = Date.now();
+          frameCount++;
+
+          // บันทึกลง Cloudflare Edge Cache เพื่อให้ทุกเครื่องทั่วโลกดึงได้พร้อมกัน
+          const cacheResponse = new Response(rawBuffer, {
+            headers: {
+              "Content-Type": "image/jpeg",
+              "Access-Control-Allow-Origin": "*",
+              "Cache-Control": "public, max-age=60",
+              "X-Frame-Time": lastFrameTime.toString()
+            }
+          });
+          ctx.waitUntil(cache.put(CACHE_URL, cacheResponse.clone()));
+        }
 
         return new Response(JSON.stringify({ 
           success: true, 
-          frameSize: cachedFrame.byteLength,
-          frameCount: frameCount
+          isWake: Date.now() < wakeUntil,
+          frameCount: frameCount 
         }), {
           status: 200,
-          headers: { 
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
-          }
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
         });
       } catch (err) {
         return new Response(JSON.stringify({ error: err.message }), { 
@@ -69,47 +76,98 @@ export default {
     }
 
     // ==========================================
-    // 2. หน้าเว็บ/มือถือดึงภาพล่าสุดไปแสดงผล (High-Speed GET)
+    // 3. ปลุกกล้องให้สตรีมเร็ว (Wake-up) เมื่อมีคนกดดูจากมือถือ
+    // ==========================================
+    if (url.pathname === "/wake") {
+      wakeUntil = Date.now() + 180000; // สตรีมเร็วต่อเนื่อง 3 นาที (180s)
+      return new Response(JSON.stringify({ success: true, wakeUntil: wakeUntil }), {
+        status: 200,
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+      });
+    }
+
+    // API ให้กล้องเช็คว่าต้องสตรีมเร็วหรือไม่
+    if (url.pathname === "/check-wake") {
+      const shouldStream = Date.now() < wakeUntil;
+      return new Response(JSON.stringify({ 
+        wake: shouldStream,
+        remainingSec: Math.max(0, Math.round((wakeUntil - Date.now()) / 1000))
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+      });
+    }
+
+    // ==========================================
+    // 4. หน้าเว็บ/มือถือ 4G/5G ดึงภาพสด (GET /latest.jpg)
     // ==========================================
     if (request.method === "GET" && (url.pathname === "/latest.jpg" || url.pathname === "/frame")) {
-      if (!cachedFrame) {
-        return new Response("No image frame received yet from camera", { 
-          status: 404,
+      // 4.1 ลองดึงจากหน่วยความจำ RAM ก่อน
+      if (memoryFrame) {
+        return new Response(memoryFrame, {
+          status: 200,
           headers: {
-            "Content-Type": "text/plain",
-            "Access-Control-Allow-Origin": "*"
+            "Content-Type": "image/jpeg",
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "X-Frame-Time": lastFrameTime.toString()
           }
         });
       }
 
-      return new Response(cachedFrame, {
+      // 4.2 ถ้าใน RAM ยังไม่มี ลองดึงจาก Edge Cache
+      const cached = await cache.match(CACHE_URL);
+      if (cached) {
+        return new Response(cached.body, {
+          status: 200,
+          headers: {
+            "Content-Type": "image/jpeg",
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"
+          }
+        });
+      }
+
+      // 4.3 หากกล้องเพิ่งเปิดและยังไม่ได้ยิงภาพแรก ส่งรูปกราฟิก Placeholder กลับไปแทน 404
+      const placeholderSvg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480">
+          <rect width="640" height="480" fill="#0f172a"/>
+          <text x="50%" y="45%" text-anchor="middle" fill="#38bdf8" font-family="sans-serif" font-size="22" font-weight="bold">
+            📡 FLOOD-CAM TANYONGMAT
+          </text>
+          <text x="50%" y="55%" text-anchor="middle" fill="#94a3b8" font-family="sans-serif" font-size="16">
+            กำลังรอเชื่อมต่อสัญญาณจากกล้อง ESP32-CAM...
+          </text>
+          <circle cx="320" cy="320" r="16" fill="none" stroke="#38bdf8" stroke-width="4" stroke-dasharray="25 25">
+            <animateTransform attributeName="transform" type="rotate" from="0 320 320" to="360 320 320" dur="1.5s" repeatCount="indefinite"/>
+          </circle>
+        </svg>
+      `;
+
+      return new Response(placeholderSvg, {
         status: 200,
         headers: {
-          "Content-Type": "image/jpeg",
+          "Content-Type": "image/svg+xml",
           "Access-Control-Allow-Origin": "*",
-          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-          "Pragma": "no-cache",
-          "X-Frame-Time": lastFrameTime.toString(),
-          "X-Frame-Age-Ms": (Date.now() - lastFrameTime).toString()
+          "Cache-Control": "no-store, no-cache, must-revalidate"
         }
       });
     }
 
     // ==========================================
-    // 3. API ตรวจสอบสถานะกล้อง (ออนไลน์/ออฟไลน์)
+    // 5. ตรวจสอบสถานะการเชื่อมต่อกล้อง
     // ==========================================
     if (request.method === "GET" && url.pathname === "/status") {
       const ageMs = Date.now() - lastFrameTime;
-      const isOnline = lastFrameTime > 0 && ageMs < 10000; // ส่งภาพมาภายใน 10 วินาทีล่าสุด
+      const isOnline = lastFrameTime > 0 && ageMs < 15000;
 
       return new Response(JSON.stringify({
-        project: "Flood-CAM Edge Relay",
+        project: "Flood-CAM Edge Relay v2",
         municipality: "เทศบาลตำบลตันหยงมัส",
         cameraOnline: isOnline,
         lastSeenMsAgo: lastFrameTime > 0 ? ageMs : null,
-        lastFrameTime: lastFrameTime,
         totalFrames: frameCount,
-        frameSize: cachedFrame ? cachedFrame.byteLength : 0
+        isWakeActive: Date.now() < wakeUntil
       }), {
         status: 200,
         headers: {
@@ -119,20 +177,9 @@ export default {
       });
     }
 
-    // Default info response
-    return new Response(
-      "🚀 Flood-CAM Cloudflare Fast Edge Relay is Running!\n" +
-      "Endpoints:\n" +
-      " - POST /upload      : Binary JPEG push from ESP32-CAM\n" +
-      " - GET  /latest.jpg  : Live image for Web/Mobile UI\n" +
-      " - GET  /status      : Telemetry & Online Status\n", 
-      { 
-        status: 200,
-        headers: { 
-          "Content-Type": "text/plain; charset=utf-8",
-          "Access-Control-Allow-Origin": "*"
-        }
-      }
-    );
+    return new Response("🚀 Flood-CAM Cloudflare Fast Edge Relay v2 Running!", { 
+      status: 200,
+      headers: { "Content-Type": "text/plain; charset=utf-8", "Access-Control-Allow-Origin": "*" }
+    });
   }
 };

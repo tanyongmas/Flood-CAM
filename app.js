@@ -362,21 +362,36 @@ function startLiveStream() {
   // เริ่ม Timestamp เวลาปัจจุบันบนมุมบนซ้ายของวิดีโอ
   startVideoTimestamp();
 
-  // ส่งคำสั่ง Wake ไปยังกล้อง (ทั้ง Local LAN และ Google Apps Script Cloud)
-  fetch(`${getControlBaseUrl()}/wake`, { mode: 'no-cors' }).catch(() => {});
+  // ส่งคำสั่ง Wake ปลุกกล้องให้สตรีมเร็ว
+  if (CAMERA_CONFIG.cf_worker_url && CAMERA_CONFIG.cf_worker_url.includes("workers.dev")) {
+    const cfBase = CAMERA_CONFIG.cf_worker_url.replace(/\/+$/, '');
+    fetch(`${cfBase}/wake`, { mode: 'cors' }).catch(() => {});
+  }
+
+  // ส่ง Wake ไปยัง Local LAN เฉพาะเมื่อไม่ได้เลือกเจาะจง Cloud Mode (ป้องกัน net::ERR_CONNECTION_TIMED_OUT)
+  if (CAMERA_CONFIG.network_mode !== 'cloud') {
+    fetch(`${getControlBaseUrl()}/wake`, { mode: 'no-cors' }).catch(() => {});
+  }
+
   if (CAMERA_CONFIG.gas_url) {
     fetch(`${CAMERA_CONFIG.gas_url}?action=wakeCamera&camId=${encodeURIComponent(CAMERA_CONFIG.id)}`).catch(() => {});
   }
 
-  // ส่งสัญญาณปลุก (Keep-Alive) ซ้ำทุกๆ 60 วินาที เพื่อไม่ให้กล้องตัดเข้า Standby ขณะที่ผู้ใช้กำลังดูอยู่
+  // ส่งสัญญาณปลุก (Keep-Alive) ซ้ำทุกๆ 45 วินาที เพื่อให้กล้องสตรีมต่อเนื่อง
   clearInterval(wakeKeepAliveTimer);
   wakeKeepAliveTimer = setInterval(() => {
     if (!isStreaming) return;
-    fetch(`${getControlBaseUrl()}/wake`, { mode: 'no-cors' }).catch(() => {});
+    if (CAMERA_CONFIG.cf_worker_url && CAMERA_CONFIG.cf_worker_url.includes("workers.dev")) {
+      const cfBase = CAMERA_CONFIG.cf_worker_url.replace(/\/+$/, '');
+      fetch(`${cfBase}/wake`, { mode: 'cors' }).catch(() => {});
+    }
+    if (CAMERA_CONFIG.network_mode !== 'cloud') {
+      fetch(`${getControlBaseUrl()}/wake`, { mode: 'no-cors' }).catch(() => {});
+    }
     if (CAMERA_CONFIG.gas_url) {
       fetch(`${CAMERA_CONFIG.gas_url}?action=wakeCamera&camId=${encodeURIComponent(CAMERA_CONFIG.id)}`).catch(() => {});
     }
-  }, 60000);
+  }, 45000);
 
   const mode = CAMERA_CONFIG.network_mode || 'auto';
 

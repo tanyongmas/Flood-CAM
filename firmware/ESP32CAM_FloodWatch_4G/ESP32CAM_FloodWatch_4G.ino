@@ -413,6 +413,15 @@ void uploadSnapshotToCloud() {
 
       // ส่ง Binary Buffer ก้อนภาพดิบ
       client.write(fbBuf, fbLen);
+      
+      // อ่านคำตอบกลับจาก Cloudflare Worker เพื่ออัปเดตสถานะปลุกสตรีม
+      while (client.connected() || client.available()) {
+        String line = client.readStringUntil('\n');
+        if (line.indexOf("\"isWake\":true") >= 0) {
+          isStreamingRequested = true;
+          lastStreamRequestTime = millis();
+        }
+      }
       client.stop();
     }
     xSemaphoreGive(camMutex);
@@ -562,16 +571,38 @@ void cloudSyncTask(void *pvParameters) {
         }
         client.stop();
       }
+
+      // ตรวจสอบคำสั่งปลุกสตรีมจาก Cloudflare Worker ทุก 2.5 วินาที เมื่ออยู่ใน Standby
+      if (USE_CLOUDFLARE_EDGE && strlen(CF_WORKER_HOST) > 5 && String(CF_WORKER_HOST).indexOf("workers.dev") > 0) {
+        WiFiClientSecure cfClient;
+        cfClient.setInsecure();
+        cfClient.setTimeout(2);
+        if (cfClient.connect(CF_WORKER_HOST, 443)) {
+          cfClient.println("GET /check-wake HTTP/1.1");
+          cfClient.print("Host: "); cfClient.println(CF_WORKER_HOST);
+          cfClient.println("Connection: close");
+          cfClient.println();
+          while (cfClient.connected() || cfClient.available()) {
+            String line = cfClient.readStringUntil('\n');
+            if (line.indexOf("\"wake\":true") >= 0) {
+              isStreamingRequested = true;
+              lastStreamRequestTime = millis();
+              Serial.println("[Cloudflare Trigger] Fast Stream Activated via Edge Wake!");
+              break;
+            }
+          }
+          cfClient.stop();
+        }
+      }
     }
 
-    // 3. เมื่อกล้องถูกสั่งสตรีม -> อัปโหลดเฟรมภาพขึ้น Cloud
-    // หากใช้ Cloudflare Edge จะส่งเร็วทุกๆ 250ms (~4-5 FPS) หากใช้ GAS จะส่งทุก 2000ms
-    if (isStreamingRequested) {
-      unsigned long pushInterval = (USE_CLOUDFLARE_EDGE && strlen(CF_WORKER_HOST) > 5 && String(CF_WORKER_HOST).indexOf("workers.dev") > 0) ? 250 : 2000;
-      if (now - lastSnapshotPush >= pushInterval) {
-        lastSnapshotPush = now;
-        uploadSnapshotToCloud();
-      }
+    // 3. อัปโหลดภาพขึ้น Cloud:
+    // - ถ้ามีคนกดดู (isStreamingRequested): ส่งเร็ว 250ms (4-5 FPS)
+    // - ถ้าไม่มีคนดู (Standby): ส่ง 1 ภาพทุก 5 วินาที เพื่อให้ Edge Server มีภาพสดพร้อมแสดงตลอดเวลา (ไม่ 404)
+    unsigned long pushInterval = isStreamingRequested ? 250 : 5000;
+    if (now - lastSnapshotPush >= pushInterval) {
+      lastSnapshotPush = now;
+      uploadSnapshotToCloud();
     }
   }
 }
