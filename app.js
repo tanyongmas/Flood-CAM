@@ -466,10 +466,12 @@ function startCloudSnapshotRelay() {
   if (CAMERA_CONFIG.cf_worker_url && CAMERA_CONFIG.cf_worker_url.startsWith("http")) {
     const cfBase = CAMERA_CONFIG.cf_worker_url.replace(/\/+$/, '');
 
-    // หากเป็น Node.js Relay (Glitch / Render) ให้ใช้ True MJPEG Stream (/stream) ทันที ลื่นไหล 8-10 FPS
-    if (cfBase.includes("glitch.me") || cfBase.includes("onrender.com") || cfBase.includes("railway") || cfBase.includes(":3000")) {
-      statusText.innerText = '⚡ Node.js Fast Relay (สตรีมสด MJPEG 8-10 FPS)';
-      streamImg.src = `${cfBase}/stream?t=${Date.now()}`;
+    const camId = encodeURIComponent(CAMERA_CONFIG.id || "CAM-TYM-01");
+
+    // หากเป็น Node.js Relay (Render) ให้ใช้ True MJPEG Stream แยกตามกล้องทันที ลื่นไหล 8-10 FPS
+    if (cfBase.includes("onrender.com") || cfBase.includes("glitch.me") || cfBase.includes("railway") || cfBase.includes(":3000")) {
+      statusText.innerText = `⚡ Live Stream (${CAMERA_CONFIG.id} • 8-10 FPS)`;
+      streamImg.src = `${cfBase}/stream?camId=${camId}&t=${Date.now()}`;
       streamImg.style.display = 'block';
       placeholder.style.display = 'none';
       return;

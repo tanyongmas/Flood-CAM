@@ -419,6 +419,7 @@ void uploadSnapshotToCloud() {
     if (http.begin(client, uploadUrl)) {
       http.addHeader("Content-Type", "image/jpeg");
       http.addHeader("x-auth-key", CF_AUTH_KEY);
+      http.addHeader("x-cam-id", CAMERA_ID); // ระบุรหัสกล้องจุดนี้ให้อัตโนมัติ (เช่น CAM-TYM-01, CAM-TYM-02)
 
       int httpCode = http.POST(fbBuf, fbLen);
       if (httpCode == HTTP_CODE_OK || httpCode == 200) {
