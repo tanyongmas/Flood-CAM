@@ -55,8 +55,7 @@ const char* LOCATION_NAME = "ถนนประชาสามัคคี ช�
 const char* GAS_EXEC_URL  = "https://script.google.com/macros/s/AKfycbwiE9fu8R9GRQ9LJoD4UXnz3K7PKV6Nip3JGMzVVOznZR0wvq5f7oHEwEfuIuh_F6in/exec";
 
 // Cloudflare Fast Edge Relay (แนวทาง C1: High-Speed Binary Push 5-10 FPS)
-// เปลี่ยนเป็นชื่อ Worker Domain ของคุณ เช่น "floodcam-relay.xxx.workers.dev"
-const char* CF_WORKER_HOST       = "floodcam-relay.workers.dev";
+const char* CF_WORKER_HOST       = "flood-cam1.tonyongmas-app.workers.dev";
 const char* CF_AUTH_KEY          = "TMSTUDIO_SECURE_TOKEN";
 bool        USE_CLOUDFLARE_EDGE  = true; // true = สตรีมสดความเร็วสูงผ่าน Cloudflare Worker
 

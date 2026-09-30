@@ -18,7 +18,7 @@ const DEFAULT_CAMERA_CONFIG = {
   alert_threshold: 180,
   bank_level: 250,
   admin_password: "admin1234",
-  cf_worker_url: "",
+  cf_worker_url: "https://flood-cam1.tonyongmas-app.workers.dev",
   gas_url: "https://script.google.com/macros/s/AKfycbwiE9fu8R9GRQ9LJoD4UXnz3K7PKV6Nip3JGMzVVOznZR0wvq5f7oHEwEfuIuh_F6in/exec",
   network_mode: "auto", // "auto" | "local" | "cloud"
   wifi_ssid: "TMSTUDIO",
@@ -34,6 +34,9 @@ function loadCameraConfig() {
     if (saved) {
       const parsed = JSON.parse(saved);
       delete parsed.preferred_mode;
+      if (!parsed.cf_worker_url) {
+        parsed.cf_worker_url = DEFAULT_CAMERA_CONFIG.cf_worker_url;
+      }
       if (parsed.ip === "192.168.1.36") {
         parsed.ip = DEFAULT_CAMERA_CONFIG.ip;
       }
