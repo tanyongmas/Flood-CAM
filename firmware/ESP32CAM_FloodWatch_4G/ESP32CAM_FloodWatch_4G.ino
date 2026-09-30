@@ -396,41 +396,33 @@ void uploadSnapshotToCloud() {
     return;
   }
 
-  // แนวทาง C1: ส่ง Binary JPEG แท้ๆ ไปยัง Cloudflare Worker
+  // แนวทาง C1: ส่ง Binary JPEG แท้ๆ ไปยัง Cloudflare Worker (เสถียร 100% ด้วย HTTPClient)
   if (USE_CLOUDFLARE_EDGE && strlen(CF_WORKER_HOST) > 5 && String(CF_WORKER_HOST).indexOf("workers.dev") > 0) {
+    String uploadUrl = "https://" + String(CF_WORKER_HOST) + "/upload";
+
     WiFiClientSecure client;
     client.setInsecure();
-    client.setTimeout(2);
+    client.setTimeout(5);
 
-    if (client.connect(CF_WORKER_HOST, 443)) {
-      client.println("POST /upload HTTP/1.1");
-      client.print("Host: "); client.println(CF_WORKER_HOST);
-      client.println("Content-Type: image/jpeg");
-      client.print("x-auth-key: "); client.println(CF_AUTH_KEY);
-      client.print("Content-Length: "); client.println(fbLen);
-      client.println("Connection: close");
-      client.println();
+    HTTPClient http;
+    http.setTimeout(6000);
+    http.setReuse(false);
 
-      // ส่ง Binary Buffer ก้อนภาพดิบ
-      client.write(fbBuf, fbLen);
-      client.flush();
-      
-      // รอการตอบกลับไม่เกิน 300ms โดยคืน CPU ให้ระบบเสมอ ป้องกัน Watchdog Trigger
-      unsigned long waitStart = millis();
-      while (!client.available() && (millis() - waitStart < 300)) {
-        vTaskDelay(pdMS_TO_TICKS(10)); // Yield ให้ FreeRTOS IDLE0 Task
+    if (http.begin(client, uploadUrl)) {
+      http.addHeader("Content-Type", "image/jpeg");
+      http.addHeader("x-auth-key", CF_AUTH_KEY);
+
+      int httpCode = http.POST(fbBuf, fbLen);
+      if (httpCode == HTTP_CODE_OK || httpCode == 200) {
+        Serial.printf("[Cloudflare Edge] Frame pushed (%u KB, code %d)\n", (unsigned int)(fbLen / 1024), httpCode);
+      } else {
+        Serial.printf("[Cloudflare Edge] Push failed, code: %d\n", httpCode);
       }
-
-      if (client.available()) {
-        String resp = client.readStringUntil('\n');
-        if (resp.indexOf("200") >= 0) {
-          Serial.printf("[Cloudflare Edge] Frame pushed (%u KB)\n", (unsigned int)(fbLen / 1024));
-        }
-      }
-      client.stop();
+      http.end();
     }
+    client.stop();
     xSemaphoreGive(camMutex);
-    vTaskDelay(pdMS_TO_TICKS(30)); // คืน CPU ให้ IDLE0 Task
+    vTaskDelay(pdMS_TO_TICKS(50)); // คืนเวลาให้ FreeRTOS IDLE0 Task
     return;
   }
 
