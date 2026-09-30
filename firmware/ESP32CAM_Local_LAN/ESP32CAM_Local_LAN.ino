@@ -404,35 +404,34 @@ void uploadSnapshotToCloud() {
     return;
   }
 
-  // แนวทาง C1: ส่ง Binary JPEG แท้ๆ ไปยัง Cloudflare Worker (High-Speed Persistent Session 5.5 FPS)
+  // แนวทาง C1: ส่ง Binary JPEG แท้ๆ ไปยัง Cloudflare Worker (เสถียร 100% ไม่ค้าง)
   if (USE_CLOUDFLARE_EDGE && strlen(CF_WORKER_HOST) > 5 && String(CF_WORKER_HOST).indexOf("workers.dev") > 0) {
-    static WiFiClientSecure cfClient;
-    static HTTPClient cfHttp;
-    static bool cfInited = false;
-
-    if (!cfInited) {
-      cfClient.setInsecure();
-      cfClient.setTimeout(3);
-      cfHttp.setReuse(true); // สำคัญมาก: เปิด Keep-Alive ข้ามการทำ SSL Handshake ใหม่ทุกเฟรม!
-      cfHttp.setTimeout(3000);
-      cfInited = true;
-    }
-
     String uploadUrl = "https://" + String(CF_WORKER_HOST) + "/upload";
-    if (!cfHttp.connected()) {
-      cfHttp.begin(cfClient, uploadUrl);
-      cfHttp.addHeader("Content-Type", "image/jpeg");
-      cfHttp.addHeader("x-auth-key", CF_AUTH_KEY);
-      cfHttp.addHeader("Connection", "keep-alive");
-    }
 
-    int httpCode = cfHttp.POST(fbBuf, fbLen);
-    if (httpCode != HTTP_CODE_OK && httpCode != 200) {
-      cfHttp.end(); // หากการเชื่อมต่อหลุด ให้ต่อใหม่ในรอบถัดไป
+    WiFiClientSecure client;
+    client.setInsecure();
+    client.setTimeout(4);
+
+    HTTPClient http;
+    http.setTimeout(4000);
+    http.setReuse(false);
+
+    if (http.begin(client, uploadUrl)) {
+      http.addHeader("Content-Type", "image/jpeg");
+      http.addHeader("x-auth-key", CF_AUTH_KEY);
+
+      int httpCode = http.POST(fbBuf, fbLen);
+      if (httpCode == HTTP_CODE_OK || httpCode == 200) {
+        Serial.printf("[Cloudflare Edge] Frame pushed (%u KB, code %d)\n", (unsigned int)(fbLen / 1024), httpCode);
+      } else {
+        Serial.printf("[Cloudflare Edge] Push failed, code: %d\n", httpCode);
+      }
+      http.end();
     }
+    client.stop();
 
     xSemaphoreGive(camMutex);
-    vTaskDelay(pdMS_TO_TICKS(15)); // คืนเวลาให้ FreeRTOS IDLE0 Task
+    vTaskDelay(pdMS_TO_TICKS(30)); // คืนเวลาให้ FreeRTOS IDLE0 Task
     return;
   }
 
@@ -583,9 +582,9 @@ void cloudSyncTask(void *pvParameters) {
     }
 
     // 3. อัปโหลดภาพขึ้น Cloud:
-    // - ถ้ามีคนกดดู (isStreamingRequested): ส่งเร็วทุก 180ms (~5.5 FPS) ลื่นไหลต่อเนื่อง
+    // - ถ้ามีคนกดดู (isStreamingRequested): ส่งทุก 350ms (~3 FPS) ต่อเนื่อง ไม่ค้าง ไม่หลุด
     // - ถ้าอยู่ใน Standby: ส่ง 1 ภาพทุก 5 วินาที เพื่อให้หน้าเว็บมีภาพสดเสมอ
-    unsigned long pushInterval = isStreamingRequested ? 180 : 5000;
+    unsigned long pushInterval = isStreamingRequested ? 350 : 5000;
     if (now - lastSnapshotPush >= pushInterval) {
       lastSnapshotPush = now;
       uploadSnapshotToCloud();
