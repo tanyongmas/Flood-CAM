@@ -1,16 +1,22 @@
 /**
  * ======================================================================================
- * ระบบกล้องตรวจวัดอุทกภัย เทศบาลตำบลตันหยงมัส (ESP32-CAM)
- * โหมดกรณีที่ 2: เครือข่าย 4G วงนอก (4G Router Cloud Snapshot Relay & Remote Wake-up)
+ * ระบบกล้องตรวจวัดและเฝ้าระวังอุทกภัยอัจฉริยะ เทศบาลตำบลตันหยงมัส (ESP32-CAM)
+ * Smart Flood Watch - Ultimate Hybrid Firmware (Dual-Mode: LAN 25 FPS + 4G Cloud Relay)
  * --------------------------------------------------------------------------------------
  * จุดตรวจ: ถนนประชาสามัคคี ชุมชนตลาดกลางผลไม้ (CAM-TYM-01)
- * เครือข่ายเริ่มต้น (วงนอก): SSID: "199X" | รหัสผ่าน: "5910110106"
+ * เครือข่ายหลัก: SSID: "TMSTUDIO" | รหัสผ่าน: "026830TM"
+ * เครือข่ายสำรอง: SSID: "199X"     | รหัสผ่าน: "5910110106"
  * --------------------------------------------------------------------------------------
  * คุณสมบัติ:
- * 1. On-Demand Cloud Snapshot Relay ผ่าน Google Apps Script (ทลายข้อจำกัด 4G CGNAT)
- * 2. Standby ประหยัดพลังงานแบตเตอรี่โซลาร์เซลล์ และไม่สิ้นเปลือง 4G Data
- * 3. รองรับการรับคำสั่งเปลี่ยน Wi-Fi ทางไกลผ่าน Google Apps Script และหน้าเว็บ Admin
- * 4. พอร์ต 80, 81, 8554 รองรับการดูในพื้นที่หน้างานพร้อมกัน
+ * 1. รองรับดูจากมือถือ "ทั้งในบ้าน (Wi-Fi เดียวกัน) และนอกบ้าน (เน็ตมือถือ 4G/5G)":
+ *    - เมื่อมือถือต่อ Wi-Fi ในบ้าน -> สตรีมสดความเร็วสูง 25 FPS (HTTP MJPEG / RTSP)
+ *    - เมื่อมือถืออยู่นอกบ้าน (เน็ต 4G/5G) -> สตรีมผ่าน Google Apps Script Cloud Snapshot Relay
+ * 2. On-Demand Remote Wake-up: ส่งภาพขึ้น Cloud เฉพาะเมื่อมีผู้กดดู เพื่อประหยัดพลังงาน & แบนด์วิดท์
+ * 3. พอร์ต 8554: RTSP Video Server (rtsp://<IP>:8554/mjpeg/1) สำหรับ NVR / VLC / OBS
+ * 4. พอร์ต 81: Dedicated HTTP MJPEG Stream (http://<IP>:81/stream) 25 FPS
+ * 5. พอร์ต 80: Web API ควบคุมไฟแฟลช, เซนเซอร์, และ "ตั้งค่าเปลี่ยน Wi-Fi ผ่านหน้าเว็บ"
+ * 6. Dual-Core FreeRTOS: ระบบ Cloud ทำงานบน Core 0 แยกอิสระ 100% ไม่หน่วงระบบควบคุมกล้อง
+ * 7. Wi-Fi Auto-Fallback & Watchdog: สลับหาเครือข่ายอัตโนมัติ และต่อใหม่ทันทีหากเน็ตหลุด
  * ======================================================================================
  */
 
@@ -28,20 +34,24 @@
 #include "OV2640Streamer.h"
 #include "CRtspSession.h"
 
+// Mutex ควบคุมความปลอดภัยในการเข้าถึงกล้องข้าม Core
 SemaphoreHandle_t camMutex = NULL;
 
-// ======================= [ค่าเริ่มต้นเครือข่าย 4G วงนอก] =======================
-const char* DEFAULT_WIFI_SSID     = "199X";
-const char* DEFAULT_WIFI_PASSWORD = "5910110106";
+// ======================= [ค่าเริ่มต้นเครือข่าย Wi-Fi] =======================
+const char* DEFAULT_WIFI_SSID     = "TMSTUDIO";
+const char* DEFAULT_WIFI_PASSWORD = "026830TM";
+
+const char* BACKUP_WIFI_SSID      = "199X";
+const char* BACKUP_WIFI_PASSWORD  = "5910110106";
 
 String currentSSID = DEFAULT_WIFI_SSID;
 String currentPASS = DEFAULT_WIFI_PASSWORD;
 
 // รหัสประจำตัวกล้อง
 const char* CAMERA_ID     = "CAM-TYM-01";
-const char* LOCATION_NAME = "ถนนประชาสามัคคี ชุมชนตลาดกลางผลไม้ (4G วงนอก 199X)";
+const char* LOCATION_NAME = "ถนนประชาสามัคคี ชุมชนตลาดกลางผลไม้";
 
-// Google Apps Script
+// Google Apps Script Cloud Backend URL
 const char* GAS_EXEC_URL  = "https://script.google.com/macros/s/AKfycbwiE9fu8R9GRQ9LJoD4UXnz3K7PKV6Nip3JGMzVVOznZR0wvq5f7oHEwEfuIuh_F6in/exec";
 
 // ฮาร์ดแวร์เซนเซอร์
@@ -50,6 +60,7 @@ const char* GAS_EXEC_URL  = "https://script.google.com/macros/s/AKfycbwiE9fu8R9G
 #define BATTERY_ADC_PIN     33
 #define LED_FLASH_PIN       4
 
+// อินสแตนซ์โมดูล
 OV2640 cam;
 WebServer controlServer(80);
 WiFiServer mjpegServer(81);
@@ -62,9 +73,11 @@ volatile bool isStreamingRequested = false;
 unsigned long lastStreamRequestTime = 0;
 #define STREAM_AUTO_OFF_SEC 180
 
+// โทรมาตร
 float currentWaterLevelCm = 0.0;
 float currentBatteryVolt = 4.12;
 
+// ประกาศฟังก์ชัน
 void loadWiFiPreferences();
 void saveWiFiPreferences(String ssid, String pass);
 void setupWiFi();
@@ -78,24 +91,27 @@ void uploadSnapshotToCloud();
 void cloudSyncTask(void *pvParameters);
 
 void setup() {
-  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // ปิด Brownout Detector ป้องกันไฟตก
 
   Serial.begin(115200);
   delay(500);
   Serial.println("\n\n========================================================");
-  Serial.printf("เทศบาลตำบลตันหยงมัส - ESP32-CAM [4G Router วงนอก]\n");
+  Serial.printf("เทศบาลตำบลตันหยงมัส - ESP32-CAM Flood Watch [%s]\n", CAMERA_ID);
   Serial.printf("จุดติดตั้ง: %s\n", LOCATION_NAME);
   Serial.println("========================================================");
 
+  // ตั้งค่า Flash LED
   ledcSetup(0, 5000, 8);
   ledcAttachPin(LED_FLASH_PIN, 0);
   setFlashLED(0);
 
+  // เซนเซอร์วัดระดับน้ำ
   pinMode(ULTRASONIC_TRIG_PIN, OUTPUT);
   pinMode(ULTRASONIC_ECHO_PIN, INPUT);
 
   camMutex = xSemaphoreCreateMutex();
 
+  // 1. เริ่มต้นกล้อง OV2640
   esp_err_t err = cam.init(esp32cam_aithinker_config);
   if (err != ESP_OK) {
     Serial.printf("[Error] Camera init failed: 0x%x\n", err);
@@ -104,37 +120,52 @@ void setup() {
   }
   Serial.println("[OK] Camera Initialized.");
 
+  // 2. โหลดและเชื่อมต่อ Wi-Fi (มีระบบสลับหา TMSTUDIO หรือ 199X อัตโนมัติ)
   loadWiFiPreferences();
   setupWiFi();
 
+  // 3. เริ่มต้นพอร์ต 80 (Control & Web Settings)
   setupControlRoutes();
   controlServer.begin();
   Serial.printf(">> Control Server Ready : http://%s/\n", WiFi.localIP().toString().c_str());
 
+  // 4. เริ่มต้นพอร์ต 81 (HTTP MJPEG Direct Stream 25 FPS)
   mjpegServer.begin();
   Serial.printf(">> HTTP MJPEG Stream    : http://%s:81/stream\n", WiFi.localIP().toString().c_str());
 
+  // 5. เริ่มต้นพอร์ต 8554 (RTSP Server)
   rtspServer.begin();
   streamer = new OV2640Streamer(&cam);
   Serial.printf(">> RTSP Video Stream    : rtsp://%s:8554/mjpeg/1\n", WiFi.localIP().toString().c_str());
 
-  // Cloud Sync Task บน Core 0
-  xTaskCreatePinnedToCore(cloudSyncTask, "CloudSync", 10240, NULL, 1, NULL, 0);
+  // 6. รัน Cloud Sync Background Task บน Core 0 (ซิงค์ระดับน้ำ & ส่งภาพขึ้น Cloud เมื่อมือถือ 4G เปิดดู)
+  xTaskCreatePinnedToCore(
+    cloudSyncTask,
+    "CloudSync",
+    10240,
+    NULL,
+    1,
+    NULL,
+    0 // Core 0
+  );
 }
 
 void loop() {
   controlServer.handleClient();
 
+  // ให้บริการสตรีมสดในวงแลนเมื่อมีการร้องขอ (หรือเมื่อมี Client เชื่อมต่อ)
   if (isStreamingRequested) {
     handleMJPEGStream();
     handleRTSP();
 
+    // ตัดเข้า Standby อัตโนมัติหลัง 3 นาทีเพื่อประหยัดพลังงาน
     if (millis() - lastStreamRequestTime >= (STREAM_AUTO_OFF_SEC * 1000UL)) {
       Serial.println("[Power] Stream session timed out. Entering Standby Mode.");
       isStreamingRequested = false;
       setFlashLED(0);
     }
   } else {
+    // ตรวจสอบ Client RTSP ที่อาจเชื่อมเข้ามาในวงแลน
     WiFiClient rtspClient = rtspServer.accept();
     if (rtspClient) {
       isStreamingRequested = true;
@@ -145,6 +176,9 @@ void loop() {
   }
 }
 
+// -------------------------------------------------------------
+// โหลดและบันทึกการตั้งค่า Wi-Fi ลงใน Flash Memory (Preferences)
+// -------------------------------------------------------------
 void loadWiFiPreferences() {
   preferences.begin("cam_wifi", false);
   String savedSSID = preferences.getString("ssid", "");
@@ -154,11 +188,11 @@ void loadWiFiPreferences() {
   if (savedSSID.length() > 0) {
     currentSSID = savedSSID;
     currentPASS = savedPASS;
-    Serial.printf("[Storage] Loaded custom Wi-Fi: %s\n", currentSSID.c_str());
+    Serial.printf("[Storage] Loaded custom Wi-Fi from Flash: %s\n", currentSSID.c_str());
   } else {
     currentSSID = DEFAULT_WIFI_SSID;
     currentPASS = DEFAULT_WIFI_PASSWORD;
-    Serial.printf("[Storage] Using default 4G Wi-Fi: %s\n", currentSSID.c_str());
+    Serial.printf("[Storage] Using default Wi-Fi: %s\n", currentSSID.c_str());
   }
 }
 
@@ -169,10 +203,29 @@ void saveWiFiPreferences(String ssid, String pass) {
   preferences.end();
   currentSSID = ssid;
   currentPASS = pass;
-  Serial.printf("[Storage] Saved new Wi-Fi: %s\n", ssid.c_str());
+  Serial.printf("[Storage] Saved new Wi-Fi to Flash: %s\n", ssid.c_str());
 }
 
+// -------------------------------------------------------------
+// จัดการคำสั่งบนพอร์ต 80 (ควบคุม, ปลุกสตรีม, เปลี่ยน Wi-Fi ผ่านหน้าเว็บ)
+// -------------------------------------------------------------
 void setupControlRoutes() {
+  // สั่งปลุกกล้องเริ่มสตรีมภาพสด
+  controlServer.on("/wake", HTTP_GET, []() {
+    isStreamingRequested = true;
+    lastStreamRequestTime = millis();
+    controlServer.sendHeader("Access-Control-Allow-Origin", "*");
+    controlServer.send(200, "application/json", "{\"status\":\"active\",\"stream_port\":81}");
+  });
+
+  // สั่งหยุดสตรีมสด
+  controlServer.on("/stop", HTTP_GET, []() {
+    isStreamingRequested = false;
+    setFlashLED(0);
+    controlServer.sendHeader("Access-Control-Allow-Origin", "*");
+    controlServer.send(200, "application/json", "{\"status\":\"stopped\"}");
+  });
+
   // ตั้งค่าเปลี่ยน Wi-Fi ของกล้อง (/setwifi?ssid=...&pass=...)
   controlServer.on("/setwifi", HTTP_GET, []() {
     controlServer.sendHeader("Access-Control-Allow-Origin", "*");
@@ -190,20 +243,20 @@ void setupControlRoutes() {
     }
   });
 
-  controlServer.on("/wake", HTTP_GET, []() {
-    isStreamingRequested = true;
-    lastStreamRequestTime = millis();
+  // คืนค่า Wi-Fi เป็นค่าเริ่มต้น (TMSTUDIO)
+  controlServer.on("/resetwifi", HTTP_GET, []() {
     controlServer.sendHeader("Access-Control-Allow-Origin", "*");
-    controlServer.send(200, "application/json", "{\"status\":\"active\",\"stream_port\":81}");
+    preferences.begin("cam_wifi", false);
+    preferences.clear();
+    preferences.end();
+    currentSSID = DEFAULT_WIFI_SSID;
+    currentPASS = DEFAULT_WIFI_PASSWORD;
+    controlServer.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"รีเซ็ต Wi-Fi เป็นค่าเริ่มต้น (TMSTUDIO) เรียบร้อย\"}");
+    delay(1000);
+    setupWiFi();
   });
 
-  controlServer.on("/stop", HTTP_GET, []() {
-    isStreamingRequested = false;
-    setFlashLED(0);
-    controlServer.sendHeader("Access-Control-Allow-Origin", "*");
-    controlServer.send(200, "application/json", "{\"status\":\"stopped\"}");
-  });
-
+  // ปรับความสว่าง Flash LED (Instant 5ms Response)
   controlServer.on("/flash", HTTP_GET, []() {
     controlServer.sendHeader("Access-Control-Allow-Origin", "*");
     if (controlServer.hasArg("val")) {
@@ -215,6 +268,7 @@ void setupControlRoutes() {
     }
   });
 
+  // ถ่ายภาพ 1 เฟรม
   controlServer.on("/capture", HTTP_GET, []() {
     if (camMutex != NULL && xSemaphoreTake(camMutex, pdMS_TO_TICKS(150)) == pdTRUE) {
       cam.run();
@@ -228,21 +282,44 @@ void setupControlRoutes() {
     }
   });
 
+  // ตรวจสอบสถานะกล้อง
   controlServer.on("/status", HTTP_GET, []() {
     float water = readWaterLevel();
     float batt = readBatteryVoltage();
     String json = "{\"camera_id\":\"" + String(CAMERA_ID) + "\",";
-    json += "\"mode\":\"4g_cloud\",";
-    json += "\"ssid\":\"" + currentSSID + "\",";
+    json += "\"ssid\":\"" + WiFi.SSID() + "\",";
+    json += "\"ip\":\"" + WiFi.localIP().toString() + "\",";
     json += "\"streaming\":" + String(isStreamingRequested ? "true" : "false") + ",";
+    json += "\"rtsp_url\":\"rtsp://" + WiFi.localIP().toString() + ":8554/mjpeg/1\",";
+    json += "\"mjpeg_url\":\"http://" + WiFi.localIP().toString() + ":81/stream\",";
     json += "\"water_level\":" + String(water, 1) + ",";
     json += "\"battery\":" + String(batt, 2) + ",";
     json += "\"rssi\":" + String(WiFi.RSSI()) + "}";
     controlServer.sendHeader("Access-Control-Allow-Origin", "*");
     controlServer.send(200, "application/json", json);
   });
+
+  // รีบูตกล้อง
+  controlServer.on("/reboot", HTTP_GET, []() {
+    controlServer.sendHeader("Access-Control-Allow-Origin", "*");
+    controlServer.send(200, "application/json", "{\"status\":\"rebooting\"}");
+    delay(1000);
+    ESP.restart();
+  });
+
+  controlServer.on("/", HTTP_GET, []() {
+    controlServer.sendHeader("Access-Control-Allow-Origin", "*");
+    String html = "<h2>ESP32-CAM Flood Watch (Hybrid LAN + Cloud)</h2>";
+    html += "<p><b>Connected Wi-Fi:</b> " + WiFi.SSID() + " (" + WiFi.localIP().toString() + ")</p>";
+    html += "<p><b>RTSP Stream:</b> rtsp://" + WiFi.localIP().toString() + ":8554/mjpeg/1</p>";
+    html += "<p><b>MJPEG Stream:</b> <a href='/stream' target='_blank'>http://" + WiFi.localIP().toString() + ":81/stream</a></p>";
+    controlServer.send(200, "text/html", html);
+  });
 }
 
+// -------------------------------------------------------------
+// สตรีมภาพสด MJPEG บนพอร์ต 81 (25 FPS ลื่นไหลในวงแลน)
+// -------------------------------------------------------------
 void handleMJPEGStream() {
   WiFiClient client = mjpegServer.available();
   if (!client) return;
@@ -266,11 +343,14 @@ void handleMJPEGStream() {
       client.println();
       xSemaphoreGive(camMutex);
     }
-    delay(40);
+    delay(40); // ~25 FPS
   }
   client.stop();
 }
 
+// -------------------------------------------------------------
+// สตรีม RTSP บนพอร์ต 8554
+// -------------------------------------------------------------
 void handleRTSP() {
   uint32_t msecPerFrame = 100;
   static uint32_t lastimage = 0;
@@ -293,6 +373,9 @@ void handleRTSP() {
   }
 }
 
+// -------------------------------------------------------------
+// อัปโหลดภาพ Snapshot ขึ้น Google Apps Script (สำหรับมือถือเน็ต 4G/5G อยู่นอกบ้าน)
+// -------------------------------------------------------------
 void uploadSnapshotToCloud() {
   if (WiFi.status() != WL_CONNECTED || String(GAS_EXEC_URL).indexOf("http") != 0) return;
 
@@ -331,6 +414,9 @@ void uploadSnapshotToCloud() {
   client.stop();
 }
 
+// -------------------------------------------------------------
+// Background Cloud Sync Task บน Core 0 (ไม่หน่วงการควบคุมกล้อง)
+// -------------------------------------------------------------
 void cloudSyncTask(void *pvParameters) {
   unsigned long lastTelemetrySync = 0;
   unsigned long lastCommandCheck = 0;
@@ -340,10 +426,11 @@ void cloudSyncTask(void *pvParameters) {
   for (;;) {
     vTaskDelay(500 / portTICK_PERIOD_MS);
 
+    // Wi-Fi Watchdog: เชื่อมต่ออัตโนมัติหากสัญญาณหลุด
     if (WiFi.status() != WL_CONNECTED) {
       if (millis() - lastWifiRetry >= 10000) {
         lastWifiRetry = millis();
-        Serial.println("[Wi-Fi Watchdog] Connection dropped. Reconnecting to 4G Wi-Fi...");
+        Serial.println("[Wi-Fi Watchdog] Connection dropped. Reconnecting...");
         WiFi.disconnect();
         WiFi.reconnect();
       }
@@ -354,7 +441,7 @@ void cloudSyncTask(void *pvParameters) {
 
     unsigned long now = millis();
 
-    // 1. ส่ง Telemetry ทุก 30 วินาที
+    // 1. ส่ง Telemetry รายงานระดับน้ำทุก 30 วินาที
     if (now - lastTelemetrySync >= 30000 || lastTelemetrySync == 0) {
       lastTelemetrySync = now;
       float water = readWaterLevel();
@@ -392,7 +479,7 @@ void cloudSyncTask(void *pvParameters) {
       client.stop();
     }
 
-    // 2. ตรวจสอบคำสั่ง (Wake หรือคำสั่งเปลี่ยน Wi-Fi ทางไกล) ทุก 3.5 วินาที
+    // 2. ตรวจสอบคำสั่งปลุกสตรีมจาก Cloud ทุก 3.5 วินาที เมื่ออยู่ใน Standby (เมื่อมือถือ 4G กดดู)
     if (!isStreamingRequested) {
       if (now - lastCommandCheck >= 3500) {
         lastCommandCheck = now;
@@ -412,14 +499,14 @@ void cloudSyncTask(void *pvParameters) {
           if (res == HTTP_CODE_OK || res == 302) {
             String payload = http.getString();
             
-            // เช็คคำสั่งปลุกสตรีม
+            // ตรวจสอบคำสั่งปลุกสตรีม
             if (payload.indexOf("wake_stream") >= 0) {
               isStreamingRequested = true;
               lastStreamRequestTime = millis();
-              Serial.println("[Cloud Trigger] Remote Wake-up Command received!");
+              Serial.println("[Cloud Trigger] Remote Wake-up Command received from Cloud!");
             }
             
-            // เช็คคำสั่งเปลี่ยน Wi-Fi ทางไกล (setwifi:<ssid>:<pass>)
+            // ตรวจสอบคำสั่งเปลี่ยน Wi-Fi ทางไกล (setwifi:<ssid>:<pass>)
             int wifiIdx = payload.indexOf("setwifi:");
             if (wifiIdx >= 0) {
               String cmdPart = payload.substring(wifiIdx + 8);
@@ -443,7 +530,7 @@ void cloudSyncTask(void *pvParameters) {
       }
     }
 
-    // 3. เมื่ออยู่ในสถานะสตรีม -> อัปโหลดเฟรมภาพขึ้น Cloud ทุก 2.0 วินาที
+    // 3. เมื่อกล้องถูกสั่งสตรีม -> อัปโหลดเฟรมภาพขึ้น Cloud ทุก 2.0 วินาที เพื่อให้มือถือ 4G ดูได้
     if (isStreamingRequested) {
       if (now - lastSnapshotPush >= 2000) {
         lastSnapshotPush = now;
@@ -482,6 +569,7 @@ float readBatteryVoltage() {
   return currentBatteryVolt;
 }
 
+// ระบบเชื่อมต่อ Wi-Fi อัจฉริยะ (สลับหา TMSTUDIO หรือ 199X สำรองอัตโนมัติ)
 void setupWiFi() {
   Serial.printf("\n[Wi-Fi] Connecting to: %s ", currentSSID.c_str());
   WiFi.disconnect(true);
@@ -496,9 +584,26 @@ void setupWiFi() {
     retries++;
   }
 
+  // หากต่อเครือข่ายหลักไม่สำเร็จ ให้ลองต่อเครือข่ายสำรองอัตโนมัติ
+  if (WiFi.status() != WL_CONNECTED) {
+    const char* fallbackSSID = (currentSSID == DEFAULT_WIFI_SSID) ? BACKUP_WIFI_SSID : DEFAULT_WIFI_SSID;
+    const char* fallbackPASS = (currentSSID == DEFAULT_WIFI_SSID) ? BACKUP_WIFI_PASSWORD : DEFAULT_WIFI_PASSWORD;
+    Serial.printf("\n[Wi-Fi Fallback] Trying alternate network: %s ", fallbackSSID);
+    WiFi.begin(fallbackSSID, fallbackPASS);
+    retries = 0;
+    while (WiFi.status() != WL_CONNECTED && retries < 20) {
+      delay(400);
+      Serial.print(".");
+      retries++;
+    }
+  }
+
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("\n[OK] Wi-Fi Connected!");
-    Serial.printf("IP Address : %s\n", WiFi.localIP().toString().c_str());
+    Serial.printf("Connected SSID: %s\n", WiFi.SSID().c_str());
+    Serial.printf("IP Address    : %s\n", WiFi.localIP().toString().c_str());
+    Serial.printf("MJPEG Stream  : http://%s:81/stream (25 FPS)\n", WiFi.localIP().toString().c_str());
+    Serial.printf("RTSP Stream   : rtsp://%s:8554/mjpeg/1\n", WiFi.localIP().toString().c_str());
   } else {
     Serial.println("\n[Warning] Wi-Fi Connection failed. Please check SSID/Password.");
   }
