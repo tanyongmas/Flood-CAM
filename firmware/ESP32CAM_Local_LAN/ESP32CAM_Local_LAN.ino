@@ -38,10 +38,10 @@
 SemaphoreHandle_t camMutex = NULL;
 
 // ======================= [ค่าเริ่มต้นเครือข่าย Wi-Fi] =======================
-const char* DEFAULT_WIFI_SSID     = "199X";
-const char* DEFAULT_WIFI_PASSWORD = "5910110106";
+const char* DEFAULT_WIFI_SSID     = "TMSTUDIO";
+const char* DEFAULT_WIFI_PASSWORD = "026830TM";
 
-const char* BACKUP_WIFI_SSID      = "199X1";
+const char* BACKUP_WIFI_SSID      = "199X";
 const char* BACKUP_WIFI_PASSWORD  = "5910110106";
 
 String currentSSID = DEFAULT_WIFI_SSID;
@@ -404,8 +404,8 @@ void uploadSnapshotToCloud() {
     return;
   }
 
-  // แนวทาง C1: ส่ง Binary JPEG แท้ๆ ไปยัง Cloudflare Worker (เสถียร 100% ไม่ค้าง)
-  if (USE_CLOUDFLARE_EDGE && strlen(CF_WORKER_HOST) > 5 && String(CF_WORKER_HOST).indexOf("workers.dev") > 0) {
+  // แนวทาง C: ส่ง Binary JPEG แท้ๆ ไปยัง Fast Relay Server (Glitch / Render / Cloudflare)
+  if (USE_CLOUDFLARE_EDGE && strlen(CF_WORKER_HOST) > 4) {
     String uploadUrl = "https://" + String(CF_WORKER_HOST) + "/upload";
 
     WiFiClientSecure client;

@@ -1,0 +1,13 @@
+{
+  "name": "floodcam-relay",
+  "version": "1.0.0",
+  "description": "High-Speed Camera Relay for ESP32-CAM (Flood Watch)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5"
+  }
+}

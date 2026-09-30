@@ -462,10 +462,20 @@ function startCloudSnapshotRelay() {
   const placeholder = document.getElementById('streamPlaceholder');
   const statusText = document.getElementById('liveStatusText');
 
-  // แนวทาง C1: หากมีการระบุ Cloudflare Worker URL ให้สตรีมสดความเร็วสูง 5-10 FPS
-  if (CAMERA_CONFIG.cf_worker_url && CAMERA_CONFIG.cf_worker_url.includes("workers.dev")) {
+  // แนวทาง C: Fast Edge & Node.js Relay (รองรับทั้ง Glitch, Render และ Cloudflare)
+  if (CAMERA_CONFIG.cf_worker_url && CAMERA_CONFIG.cf_worker_url.startsWith("http")) {
     const cfBase = CAMERA_CONFIG.cf_worker_url.replace(/\/+$/, '');
-    statusText.innerText = '⚡ Cloudflare Fast Edge: กำลังเชื่อมต่อสตรีมสดความเร็วสูง...';
+
+    // หากเป็น Node.js Relay (Glitch / Render) ให้ใช้ True MJPEG Stream (/stream) ทันที ลื่นไหล 8-10 FPS
+    if (cfBase.includes("glitch.me") || cfBase.includes("onrender.com") || cfBase.includes("railway") || cfBase.includes(":3000")) {
+      statusText.innerText = '⚡ Node.js Fast Relay (สตรีมสด MJPEG 8-10 FPS)';
+      streamImg.src = `${cfBase}/stream?t=${Date.now()}`;
+      streamImg.style.display = 'block';
+      placeholder.style.display = 'none';
+      return;
+    }
+
+    statusText.innerText = '⚡ Cloudflare Fast Edge: กำลังเชื่อมต่อสตรีมสด...';
 
     let isEdgeFetching = false;
     let frameCounter = 0;
