@@ -54,10 +54,10 @@ const char* LOCATION_NAME = "ถนนประชาสามัคคี ช�
 // Google Apps Script Cloud Backend URL
 const char* GAS_EXEC_URL  = "https://script.google.com/macros/s/AKfycbwiE9fu8R9GRQ9LJoD4UXnz3K7PKV6Nip3JGMzVVOznZR0wvq5f7oHEwEfuIuh_F6in/exec";
 
-// Cloudflare Fast Edge Relay (แนวทาง C1: High-Speed Binary Push 5-10 FPS)
-const char* CF_WORKER_HOST       = "flood-cam1.tonyongmas-app.workers.dev";
+// Fast Cloud Relay (Node.js Render.com / Cloudflare 8-10 FPS)
+const char* CF_WORKER_HOST       = "flood-cam.onrender.com";
 const char* CF_AUTH_KEY          = "TMSTUDIO_SECURE_TOKEN";
-bool        USE_CLOUDFLARE_EDGE  = true; // true = สตรีมสดความเร็วสูงผ่าน Cloudflare Worker
+bool        USE_CLOUDFLARE_EDGE  = true; // true = สตรีมสดความเร็วสูงผ่าน Cloud Relay
 
 // ฮาร์ดแวร์เซนเซอร์
 #define ULTRASONIC_TRIG_PIN 13
