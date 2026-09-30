@@ -18,6 +18,7 @@ const DEFAULT_CAMERA_CONFIG = {
   alert_threshold: 180,
   bank_level: 250,
   admin_password: "admin1234",
+  cf_worker_url: "",
   gas_url: "https://script.google.com/macros/s/AKfycbwiE9fu8R9GRQ9LJoD4UXnz3K7PKV6Nip3JGMzVVOznZR0wvq5f7oHEwEfuIuh_F6in/exec",
   network_mode: "auto", // "auto" | "local" | "cloud"
   wifi_ssid: "TMSTUDIO",
@@ -32,7 +33,6 @@ function loadCameraConfig() {
     const saved = localStorage.getItem('ESP32CAM_CONFIG');
     if (saved) {
       const parsed = JSON.parse(saved);
-      delete parsed.cf_worker_url;
       delete parsed.preferred_mode;
       if (parsed.ip === "192.168.1.36") {
         parsed.ip = DEFAULT_CAMERA_CONFIG.ip;
@@ -435,7 +435,7 @@ function startLiveStream() {
   probeImg.src = `${getControlBaseUrl()}/capture?t=${Date.now()}`;
 }
 
-// วิธีที่ 1: Cloud Snapshot Relay ผ่าน Google Apps Script (เสถียร 100% ทะลุเน็ตคนละวง)
+// วิธีที่ 1 & C1: Cloud Relay (รองรับ Cloudflare Fast Edge 5-10 FPS หรือ Google Apps Script)
 function startCloudSnapshotRelay() {
   if (!isStreaming) return;
   currentStreamMode = 'cloud';
@@ -444,6 +444,56 @@ function startCloudSnapshotRelay() {
   const placeholder = document.getElementById('streamPlaceholder');
   const statusText = document.getElementById('liveStatusText');
 
+  // แนวทาง C1: หากมีการระบุ Cloudflare Worker URL ให้สตรีมสดความเร็วสูง 5-10 FPS
+  if (CAMERA_CONFIG.cf_worker_url && CAMERA_CONFIG.cf_worker_url.includes("workers.dev")) {
+    const cfBase = CAMERA_CONFIG.cf_worker_url.replace(/\/+$/, '');
+    statusText.innerText = '⚡ Cloudflare Fast Edge: กำลังเชื่อมต่อสตรีมสดความเร็วสูง...';
+
+    let isEdgeFetching = false;
+    let frameCounter = 0;
+    let fpsStart = Date.now();
+    let currentFps = '5.0';
+
+    const fetchEdgeFrame = () => {
+      if (!isStreaming || currentStreamMode !== 'cloud' || isEdgeFetching) return;
+      isEdgeFetching = true;
+
+      const preImg = new Image();
+      preImg.onload = () => {
+        if (!isStreaming || currentStreamMode !== 'cloud') {
+          isEdgeFetching = false;
+          return;
+        }
+        streamImg.src = preImg.src;
+        streamImg.style.display = 'block';
+        placeholder.style.display = 'none';
+
+        frameCounter++;
+        const elapsed = (Date.now() - fpsStart) / 1000;
+        if (elapsed >= 2.0) {
+          currentFps = (frameCounter / elapsed).toFixed(1);
+          frameCounter = 0;
+          fpsStart = Date.now();
+        }
+        statusText.innerText = `⚡ Cloudflare Fast Edge (${currentFps} FPS • ความหน่วงต่ำ)`;
+        isEdgeFetching = false;
+      };
+
+      preImg.onerror = () => {
+        isEdgeFetching = false;
+        statusText.innerText = '⚡ Cloudflare Edge: กำลังรอเฟรมภาพสดจากกล้อง...';
+      };
+
+      preImg.src = `${cfBase}/latest.jpg?t=${Date.now()}`;
+    };
+
+    fetchEdgeFrame();
+    clearInterval(cloudSnapshotTimer);
+    cloudSnapshotTimer = setInterval(fetchEdgeFrame, 200); // Polling ทุก 200ms (~5 FPS)
+    return;
+  }
+
+  // แนวทางเดิม (A): Google Apps Script Snapshot Relay (สำรอง)
   statusText.innerText = '☁️ โหมด Cloud Relay: กำลังดึงภาพสดข้ามเครือข่าย...';
 
   let isFetching = false;
@@ -777,6 +827,7 @@ function openAdminModal() {
   document.getElementById('cfgNetworkMode').value = CAMERA_CONFIG.network_mode || "auto";
   document.getElementById('cfgWifiSsid').value = CAMERA_CONFIG.wifi_ssid || "TMSTUDIO";
   document.getElementById('cfgWifiPass').value = CAMERA_CONFIG.wifi_pass || "026830TM";
+  document.getElementById('cfgCfWorkerUrl').value = CAMERA_CONFIG.cf_worker_url || "";
   document.getElementById('cfgGasUrl').value = CAMERA_CONFIG.gas_url;
   document.getElementById('cfgAdminPassword').value = CAMERA_CONFIG.admin_password || "admin1234";
   document.getElementById('cfgDraggableMarker').checked = isMarkerDraggable;
@@ -811,6 +862,7 @@ function saveAdminSettings() {
   const networkMode = document.getElementById('cfgNetworkMode').value || "auto";
   const wifiSsid = (document.getElementById('cfgWifiSsid').value || "").trim();
   const wifiPass = (document.getElementById('cfgWifiPass').value || "").trim();
+  const cfWorkerUrl = (document.getElementById('cfgCfWorkerUrl').value || "").trim().replace(/\/+$/, '');
   const gasUrl = document.getElementById('cfgGasUrl').value.trim();
   const newPassword = document.getElementById('cfgAdminPassword').value.trim();
 
@@ -832,6 +884,7 @@ function saveAdminSettings() {
   CAMERA_CONFIG.network_mode = networkMode;
   CAMERA_CONFIG.wifi_ssid = wifiSsid;
   CAMERA_CONFIG.wifi_pass = wifiPass;
+  CAMERA_CONFIG.cf_worker_url = cfWorkerUrl;
   CAMERA_CONFIG.gas_url = gasUrl;
   if (newPassword) {
     CAMERA_CONFIG.admin_password = newPassword;

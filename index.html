@@ -370,13 +370,22 @@
             <div id="wifiSendStatus" style="display:none; font-size:0.75rem; margin-top:6px; padding:6px 8px; border-radius:6px;"></div>
           </div>
 
-          <!-- Section 4: การเชื่อมต่อ Google Cloud (วิธีที่ 1) & ความปลอดภัย -->
+          <!-- Section 4: คลาวด์รีเลย์ (Cloudflare Fast Edge & Google Apps Script) & ความปลอดภัย -->
           <div class="admin-section">
             <div class="admin-section-title">
-              <span>☁️ คลาวด์รีเลย์ Google Apps Script & ความปลอดภัย</span>
+              <span>⚡ คลาวด์รีเลย์ความเร็วสูง (Cloud Edge & Relay) & ความปลอดภัย</span>
             </div>
             <div class="admin-form-group">
-              <label for="cfgGasUrl">Google Apps Script Exec URL (Snapshot Relay)</label>
+              <label for="cfgCfWorkerUrl">
+                🚀 Cloudflare Fast Edge URL (แนวทาง C1: สตรีมสดลื่นไหล 5-10 FPS)
+              </label>
+              <input type="text" id="cfgCfWorkerUrl" class="admin-input" placeholder="https://floodcam-relay.xxxx.workers.dev">
+              <span style="font-size:0.7rem; color:var(--text-muted); margin-top:2px; display:block;">
+                * สตรีมภาพสดความเร็วสูงผ่าน Edge Server ทั่วโลก ไร้ Base64
+              </span>
+            </div>
+            <div class="admin-form-group" style="margin-top:8px;">
+              <label for="cfgGasUrl">Google Apps Script Exec URL (ระบบสำรอง Snapshot Relay)</label>
               <input type="text" id="cfgGasUrl" class="admin-input" placeholder="https://script.google.com/macros/s/.../exec">
             </div>
             <div class="admin-form-group" style="margin-top:8px;">

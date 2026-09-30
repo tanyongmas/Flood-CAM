@@ -1,47 +1,117 @@
 /**
- * =========================================================================================
- * CLOUDFLARE WORKER - ESP32-CAM WEBSOCKET REAL-TIME RELAY
- * ระบบสตรีมภาพสดข้ามเครือข่ายความเร็วสูง (Ultra-Low Latency 10-15 FPS)
- * เทศบาลตำบลตันหยงมัส อ.ระแงะ จ.นราธิวาส
- * =========================================================================================
- * ฟรี 100% ตลอดชีพ (Free Tier: 100,000 requests/day, Unlimited WebSocket sessions)
+ * Cloudflare Worker: Flood-CAM High-Speed Edge Relay
+ * เทศบาลตำบลตันหยงมัส (Tanyongmat Municipality Flood Monitoring)
  * 
- * สถาปัตยกรรมการทำงาน:
- * [ESP32-CAM + Pocket Wi-Fi 4G] --- WebSocket (WSS) ---> [Cloudflare Worker Edge] <--- WebSocket (WSS) --- [Web Dashboard]
- * 
- * Endpoints:
- * 1. wss://<your-worker>.workers.dev/ws/camera?camId=CAM-TYM-01   (กล้องเชื่อมต่อส่งภาพ)
- * 2. wss://<your-worker>.workers.dev/ws/client?camId=CAM-TYM-01   (หน้าเว็บเชื่อมต่อรับภาพสด)
- * 3. https://<your-worker>.workers.dev/snapshot?camId=CAM-TYM-01  (ดึงภาพนิ่งล่าสุด HTTP JPEG)
- * 4. https://<your-worker>.workers.dev/status                     (เช็คสถานะการเชื่อมต่อ)
- * =========================================================================================
+ * คุณสมบัติ:
+ * 1. รับภาพ Binary JPEG แท้ๆ จาก ESP32-CAM ผ่าน POST /upload (ไม่ต้องแปลง Base64)
+ * 2. ให้หน้าเว็บเบราว์เซอร์/มือถือ 4G/5G ดึงภาพสดผ่าน GET /latest.jpg ด้วยความเร็ว 5-10 FPS
+ * 3. มี API ตรวจสอบสถานะออนไลน์ของกล้อง GET /status
  */
 
-// เก็บสถานะการเชื่อมต่อใน Edge Memory
-const cameras = new Map();     // camId -> { ws, lastSeen, latestFrame, subscribers: Set }
-const subscribers = new Map(); // camId -> Set<WebSocket>
+// Memory Cache สำหรับเก็บบัฟเฟอร์รูปภาพล่าสุด
+let cachedFrame = null;
+let lastFrameTime = 0;
+let frameCount = 0;
+
+// Token ความปลอดภัยสำหรับให้เฉพาะ ESP32-CAM ของเราส่งภาพได้
+const AUTH_KEY = "TMSTUDIO_SECURE_TOKEN";
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    const pathname = url.pathname;
-    const camId = url.searchParams.get("camId") || "CAM-TYM-01";
 
-    // -------------------------------------------------------------
-    // 1. ตรวจสอบสถานะระบบ (HTTP GET /status)
-    // -------------------------------------------------------------
-    if (pathname === "/status") {
-      const camInfo = cameras.get(camId);
-      const subs = subscribers.get(camId) || new Set();
+    // รองรับ CORS Preflight
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, x-auth-key",
+          "Access-Control-Max-Age": "86400",
+        }
+      });
+    }
+
+    // ==========================================
+    // 1. ESP32-CAM ส่งภาพดิบ (Binary JPEG) ขึ้นมา
+    // ==========================================
+    if (request.method === "POST" && url.pathname === "/upload") {
+      const auth = request.headers.get("x-auth-key");
+      if (auth !== AUTH_KEY) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { 
+          status: 401, 
+          headers: { "Content-Type": "application/json" } 
+        });
+      }
+
+      try {
+        cachedFrame = await request.arrayBuffer();
+        lastFrameTime = Date.now();
+        frameCount++;
+
+        return new Response(JSON.stringify({ 
+          success: true, 
+          frameSize: cachedFrame.byteLength,
+          frameCount: frameCount
+        }), {
+          status: 200,
+          headers: { 
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*"
+          }
+        });
+      } catch (err) {
+        return new Response(JSON.stringify({ error: err.message }), { 
+          status: 500,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+    }
+
+    // ==========================================
+    // 2. หน้าเว็บ/มือถือดึงภาพล่าสุดไปแสดงผล (High-Speed GET)
+    // ==========================================
+    if (request.method === "GET" && (url.pathname === "/latest.jpg" || url.pathname === "/frame")) {
+      if (!cachedFrame) {
+        return new Response("No image frame received yet from camera", { 
+          status: 404,
+          headers: {
+            "Content-Type": "text/plain",
+            "Access-Control-Allow-Origin": "*"
+          }
+        });
+      }
+
+      return new Response(cachedFrame, {
+        status: 200,
+        headers: {
+          "Content-Type": "image/jpeg",
+          "Access-Control-Allow-Origin": "*",
+          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+          "Pragma": "no-cache",
+          "X-Frame-Time": lastFrameTime.toString(),
+          "X-Frame-Age-Ms": (Date.now() - lastFrameTime).toString()
+        }
+      });
+    }
+
+    // ==========================================
+    // 3. API ตรวจสอบสถานะกล้อง (ออนไลน์/ออฟไลน์)
+    // ==========================================
+    if (request.method === "GET" && url.pathname === "/status") {
+      const ageMs = Date.now() - lastFrameTime;
+      const isOnline = lastFrameTime > 0 && ageMs < 10000; // ส่งภาพมาภายใน 10 วินาทีล่าสุด
+
       return new Response(JSON.stringify({
-        status: "active",
-        service: "Cloudflare WebSocket Stream Relay - Tanyongmat Flood Watch",
-        camId: camId,
-        cameraOnline: !!(camInfo && camInfo.ws && camInfo.ws.readyState === WebSocket.OPEN),
-        viewersCount: subs.size,
-        hasLatestFrame: !!(camInfo && camInfo.latestFrame),
-        timestamp: new Date().toISOString()
-      }, null, 2), {
+        project: "Flood-CAM Edge Relay",
+        municipality: "เทศบาลตำบลตันหยงมัส",
+        cameraOnline: isOnline,
+        lastSeenMsAgo: lastFrameTime > 0 ? ageMs : null,
+        lastFrameTime: lastFrameTime,
+        totalFrames: frameCount,
+        frameSize: cachedFrame ? cachedFrame.byteLength : 0
+      }), {
+        status: 200,
         headers: {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*"
@@ -49,167 +119,20 @@ export default {
       });
     }
 
-    // -------------------------------------------------------------
-    // 2. ดึงภาพ Snapshot ล่าสุด (HTTP GET /snapshot)
-    // -------------------------------------------------------------
-    if (pathname === "/snapshot") {
-      const camInfo = cameras.get(camId);
-      if (camInfo && camInfo.latestFrame) {
-        return new Response(camInfo.latestFrame, {
-          headers: {
-            "Content-Type": "image/jpeg",
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Access-Control-Allow-Origin": "*"
-          }
-        });
-      }
-      return new Response("No snapshot available yet", {
-        status: 404,
-        headers: { "Access-Control-Allow-Origin": "*" }
-      });
-    }
-
-    // -------------------------------------------------------------
-    // 3. WebSocket สำหรับกล้อง ESP32-CAM ส่งภาพสด (/ws/camera)
-    // -------------------------------------------------------------
-    if (pathname === "/ws/camera") {
-      const upgradeHeader = request.headers.get("Upgrade");
-      if (!upgradeHeader || upgradeHeader !== "websocket") {
-        return new Response("Expected WebSocket Upgrade", { status: 426 });
-      }
-
-      const webSocketPair = new WebSocketPair();
-      const [client, server] = Object.values(webSocketPair);
-
-      server.accept();
-
-      // บันทึกการเชื่อมต่อของกล้อง
-      let camState = cameras.get(camId);
-      if (!camState) {
-        camState = { ws: server, lastSeen: Date.now(), latestFrame: null };
-        cameras.set(camId, camState);
-      } else {
-        try { camState.ws.close(); } catch(e) {}
-        camState.ws = server;
-        camState.lastSeen = Date.now();
-      }
-
-      console.log(`[Camera Connected] ${camId}`);
-
-      // แจ้งจำนวนผู้ชมปัจจุบันให้กล้องทราบทันที
-      const currentSubs = subscribers.get(camId) || new Set();
-      server.send(JSON.stringify({
-        type: "init",
-        viewers: currentSubs.size,
-        stream_mode: currentSubs.size > 0 ? "active" : "standby"
-      }));
-
-      // เมื่อกล้องส่งภาพเฟรม (Binary JPEG หรือ Base64)
-      server.addEventListener("message", (event) => {
-        camState.lastSeen = Date.now();
-
-        // เก็บภาพล่าสุดไว้สำหรับ /snapshot
-        camState.latestFrame = event.data;
-
-        // ถ่ายทอดภาพสดให้ทุก Web Browser ที่กำลังชมอยู่ทันที (Zero Latency)
-        const subs = subscribers.get(camId);
-        if (subs && subs.size > 0) {
-          for (const subWs of subs) {
-            try {
-              if (subWs.readyState === WebSocket.OPEN) {
-                subWs.send(event.data);
-              } else {
-                subs.delete(subWs);
-              }
-            } catch (err) {
-              subs.delete(subWs);
-            }
-          }
+    // Default info response
+    return new Response(
+      "🚀 Flood-CAM Cloudflare Fast Edge Relay is Running!\n" +
+      "Endpoints:\n" +
+      " - POST /upload      : Binary JPEG push from ESP32-CAM\n" +
+      " - GET  /latest.jpg  : Live image for Web/Mobile UI\n" +
+      " - GET  /status      : Telemetry & Online Status\n", 
+      { 
+        status: 200,
+        headers: { 
+          "Content-Type": "text/plain; charset=utf-8",
+          "Access-Control-Allow-Origin": "*"
         }
-      });
-
-      server.addEventListener("close", () => {
-        console.log(`[Camera Disconnected] ${camId}`);
-        if (camState.ws === server) {
-          camState.ws = null;
-        }
-      });
-
-      return new Response(null, { status: 101, webSocket: client });
-    }
-
-    // -------------------------------------------------------------
-    // 4. WebSocket สำหรับ Web Browser รับภาพสด (/ws/client)
-    // -------------------------------------------------------------
-    if (pathname === "/ws/client") {
-      const upgradeHeader = request.headers.get("Upgrade");
-      if (!upgradeHeader || upgradeHeader !== "websocket") {
-        return new Response("Expected WebSocket Upgrade", { status: 426 });
       }
-
-      const webSocketPair = new WebSocketPair();
-      const [client, server] = Object.values(webSocketPair);
-
-      server.accept();
-
-      let subs = subscribers.get(camId);
-      if (!subs) {
-        subs = new Set();
-        subscribers.set(camId, subs);
-      }
-      subs.add(server);
-
-      console.log(`[Viewer Joined] ${camId}, Total Viewers: ${subs.size}`);
-
-      // แจ้งกล้องให้เริ่มสตรีมภาพ เพราะมีผู้เข้าชม
-      const camState = cameras.get(camId);
-      if (camState && camState.ws && camState.ws.readyState === WebSocket.OPEN) {
-        camState.ws.send(JSON.stringify({
-          type: "wake_stream",
-          viewers: subs.size
-        }));
-      }
-
-      // ส่งภาพล่าสุดที่มีอยู่ให้ผู้ชมทันทีไม่ต้องรอ
-      if (camState && camState.latestFrame) {
-        server.send(camState.latestFrame);
-      }
-
-      // รับคำสั่งควบคุมจาก Web Browser (เช่น ปรับไฟแฟลช, สั่งปลุก) แล้วส่งต่อไปยังกล้อง
-      server.addEventListener("message", (event) => {
-        if (camState && camState.ws && camState.ws.readyState === WebSocket.OPEN) {
-          camState.ws.send(event.data);
-        }
-      });
-
-      server.addEventListener("close", () => {
-        subs.delete(server);
-        console.log(`[Viewer Left] ${camId}, Remaining Viewers: ${subs.size}`);
-
-        // หากไม่มีผู้ชมเหลืออยู่เลย ให้สั่งกล้องประหยัดพลังงานกลับสู่ Standby
-        if (subs.size === 0 && camState && camState.ws && camState.ws.readyState === WebSocket.OPEN) {
-          camState.ws.send(JSON.stringify({
-            type: "standby",
-            viewers: 0
-          }));
-        }
-      });
-
-      return new Response(null, { status: 101, webSocket: client });
-    }
-
-    // หน้าต้อนรับและคำแนะนำ
-    return new Response(`
-      <h2>📡 Cloudflare WebSocket Stream Relay</h2>
-      <p>ระบบสตรีมสดอัจฉริยะ เทศบาลตำบลตันหยงมัส</p>
-      <ul>
-        <li>Camera WS: <code>wss://${url.host}/ws/camera?camId=CAM-TYM-01</code></li>
-        <li>Client WS: <code>wss://${url.host}/ws/client?camId=CAM-TYM-01</code></li>
-        <li>Snapshot: <a href="/snapshot?camId=CAM-TYM-01">/snapshot?camId=CAM-TYM-01</a></li>
-        <li>Status: <a href="/status?camId=CAM-TYM-01">/status?camId=CAM-TYM-01</a></li>
-      </ul>
-    `, {
-      headers: { "Content-Type": "text/html; charset=utf-8" }
-    });
+    );
   }
 };

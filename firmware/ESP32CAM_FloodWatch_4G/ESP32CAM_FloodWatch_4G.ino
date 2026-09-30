@@ -54,6 +54,12 @@ const char* LOCATION_NAME = "ถนนประชาสามัคคี ช�
 // Google Apps Script Cloud Backend URL
 const char* GAS_EXEC_URL  = "https://script.google.com/macros/s/AKfycbwiE9fu8R9GRQ9LJoD4UXnz3K7PKV6Nip3JGMzVVOznZR0wvq5f7oHEwEfuIuh_F6in/exec";
 
+// Cloudflare Fast Edge Relay (แนวทาง C1: High-Speed Binary Push 5-10 FPS)
+// เปลี่ยนเป็นชื่อ Worker Domain ของคุณ เช่น "floodcam-relay.xxx.workers.dev"
+const char* CF_WORKER_HOST       = "floodcam-relay.workers.dev";
+const char* CF_AUTH_KEY          = "TMSTUDIO_SECURE_TOKEN";
+bool        USE_CLOUDFLARE_EDGE  = true; // true = สตรีมสดความเร็วสูงผ่าน Cloudflare Worker
+
 // ฮาร์ดแวร์เซนเซอร์
 #define ULTRASONIC_TRIG_PIN 13
 #define ULTRASONIC_ECHO_PIN 12
@@ -374,10 +380,10 @@ void handleRTSP() {
 }
 
 // -------------------------------------------------------------
-// อัปโหลดภาพ Snapshot ขึ้น Google Apps Script (สำหรับมือถือเน็ต 4G/5G อยู่นอกบ้าน)
+// อัปโหลดภาพขึ้น Cloud (รองรับ Cloudflare Worker High-Speed Edge หรือ Google Apps Script)
 // -------------------------------------------------------------
 void uploadSnapshotToCloud() {
-  if (WiFi.status() != WL_CONNECTED || String(GAS_EXEC_URL).indexOf("http") != 0) return;
+  if (WiFi.status() != WL_CONNECTED) return;
 
   if (camMutex == NULL) return;
   if (xSemaphoreTake(camMutex, pdMS_TO_TICKS(200)) != pdTRUE) return;
@@ -387,6 +393,35 @@ void uploadSnapshotToCloud() {
   size_t fbLen = cam.getSize();
 
   if (!fbBuf || fbLen == 0) {
+    xSemaphoreGive(camMutex);
+    return;
+  }
+
+  // แนวทาง C1: ส่ง Binary JPEG แท้ๆ ไปยัง Cloudflare Worker (เร็ว 5-10 FPS ไร้ Base64)
+  if (USE_CLOUDFLARE_EDGE && strlen(CF_WORKER_HOST) > 5 && String(CF_WORKER_HOST).indexOf("workers.dev") > 0) {
+    WiFiClientSecure client;
+    client.setInsecure();
+    client.setTimeout(3);
+
+    if (client.connect(CF_WORKER_HOST, 443)) {
+      client.println("POST /upload HTTP/1.1");
+      client.print("Host: "); client.println(CF_WORKER_HOST);
+      client.println("Content-Type: image/jpeg");
+      client.print("x-auth-key: "); client.println(CF_AUTH_KEY);
+      client.print("Content-Length: "); client.println(fbLen);
+      client.println("Connection: close");
+      client.println();
+
+      // ส่ง Binary Buffer ก้อนภาพดิบ
+      client.write(fbBuf, fbLen);
+      client.stop();
+    }
+    xSemaphoreGive(camMutex);
+    return;
+  }
+
+  // แนวทางเดิม (A): ส่ง Base64 ไปยัง Google Apps Script (สำรอง)
+  if (String(GAS_EXEC_URL).indexOf("http") != 0) {
     xSemaphoreGive(camMutex);
     return;
   }
@@ -530,9 +565,11 @@ void cloudSyncTask(void *pvParameters) {
       }
     }
 
-    // 3. เมื่อกล้องถูกสั่งสตรีม -> อัปโหลดเฟรมภาพขึ้น Cloud ทุก 2.0 วินาที เพื่อให้มือถือ 4G ดูได้
+    // 3. เมื่อกล้องถูกสั่งสตรีม -> อัปโหลดเฟรมภาพขึ้น Cloud
+    // หากใช้ Cloudflare Edge จะส่งเร็วทุกๆ 250ms (~4-5 FPS) หากใช้ GAS จะส่งทุก 2000ms
     if (isStreamingRequested) {
-      if (now - lastSnapshotPush >= 2000) {
+      unsigned long pushInterval = (USE_CLOUDFLARE_EDGE && strlen(CF_WORKER_HOST) > 5 && String(CF_WORKER_HOST).indexOf("workers.dev") > 0) ? 250 : 2000;
+      if (now - lastSnapshotPush >= pushInterval) {
         lastSnapshotPush = now;
         uploadSnapshotToCloud();
       }
