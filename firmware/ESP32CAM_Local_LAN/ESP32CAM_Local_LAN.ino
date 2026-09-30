@@ -125,11 +125,11 @@ void setup() {
   }
   Serial.println("[OK] Camera Initialized.");
 
-  // ปรับแต่งเซนเซอร์เพื่อความเร็วในการสตรีมผ่าน 4G สูงสุด (ไฟล์เล็ก โหลดไว ภาพลื่นไหล)
+  // ปรับแต่งเซนเซอร์เพื่อความเร็วในการสตรีมผ่าน 4G สูงสุด (ไฟล์เล็กเพียง 5-7 KB ภาพลื่นไหล 6-8 FPS)
   sensor_t * s = esp_camera_sensor_get();
   if (s) {
-    s->set_framesize(s, FRAMESIZE_VGA); // 640x480 ความละเอียดมาตรฐานคมชัด
-    s->set_quality(s, 16);              // ค่าคุณภาพ 16 (ขนาดรูปเพียง ~15 KB อัปโหลดเสร็จใน 50ms)
+    s->set_framesize(s, FRAMESIZE_CIF); // 400x296 (เฟรมเรทสูง อัตราส่วนกล้องตรวจวัดระดับน้ำพอเหมาะ)
+    s->set_quality(s, 20);              // ขนาดรูปภาพเล็กลงเหลือเพียง ~5-7 KB ส่งผ่าน 4G ได้ 6-8 FPS
     s->set_brightness(s, 1);
   }
 
@@ -582,9 +582,9 @@ void cloudSyncTask(void *pvParameters) {
     }
 
     // 3. อัปโหลดภาพขึ้น Cloud:
-    // - ถ้ามีคนกดดู (isStreamingRequested): ส่งทุก 350ms (~3 FPS) ต่อเนื่อง ไม่ค้าง ไม่หลุด
-    // - ถ้าอยู่ใน Standby: ส่ง 1 ภาพทุก 5 วินาที เพื่อให้หน้าเว็บมีภาพสดเสมอ
-    unsigned long pushInterval = isStreamingRequested ? 350 : 5000;
+    // - ถ้ามีคนกดดู (isStreamingRequested): ส่งเร็วทุก 130ms (~7-8 FPS) ลื่นไหลต่อเนื่อง
+    // - ถ้าอยู่ใน Standby: ส่ง 1 ภาพทุก 4 วินาที เพื่อให้หน้าเว็บมีภาพสดเสมอ
+    unsigned long pushInterval = isStreamingRequested ? 130 : 4000;
     if (now - lastSnapshotPush >= pushInterval) {
       lastSnapshotPush = now;
       uploadSnapshotToCloud();

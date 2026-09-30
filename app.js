@@ -507,7 +507,7 @@ function startCloudSnapshotRelay() {
 
     fetchEdgeFrame();
     clearInterval(cloudSnapshotTimer);
-    cloudSnapshotTimer = setInterval(fetchEdgeFrame, 250); // Polling ทุก 250ms (~4 FPS)
+    cloudSnapshotTimer = setInterval(fetchEdgeFrame, 120); // Polling ทุก 120ms (~8 FPS)
     return;
   }
 
