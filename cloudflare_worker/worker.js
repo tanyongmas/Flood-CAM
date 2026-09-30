@@ -1,5 +1,5 @@
 /**
- * Cloudflare Worker: Flood-CAM High-Speed Edge Relay (v2 - Durable Cache & Instant Wake)
+ * Cloudflare Worker: Flood-CAM High-Speed Edge Relay (v3 - Origin-Matched Durable Cache)
  * เทศบาลตำบลตันหยงมัส (Tanyongmat Municipality Flood Monitoring)
  */
 
@@ -9,7 +9,12 @@ let frameCount = 0;
 let wakeUntil = 0;
 
 const AUTH_KEY = "TMSTUDIO_SECURE_TOKEN";
-const CACHE_URL = "https://floodcam.internal/latest.jpg";
+
+// สร้าง Cache Key ที่ตรงกับ Hostname ของ Worker เสมอ (ป้องกัน Origin Mismatch)
+function getCacheKey(request) {
+  const origin = new URL(request.url).origin;
+  return new Request(`${origin}/latest.jpg`, { method: "GET" });
+}
 
 export default {
   async fetch(request, env, ctx) {
@@ -47,16 +52,18 @@ export default {
           lastFrameTime = Date.now();
           frameCount++;
 
-          // บันทึกลง Cloudflare Edge Cache เพื่อให้ทุกเครื่องทั่วโลกดึงได้พร้อมกัน
+          // บันทึกลง Cloudflare Edge Cache ด้วย Origin ของ Worker ที่ถูกต้อง
+          const cacheKey = getCacheKey(request);
           const cacheResponse = new Response(rawBuffer, {
             headers: {
               "Content-Type": "image/jpeg",
               "Access-Control-Allow-Origin": "*",
-              "Cache-Control": "public, max-age=60",
+              "Cache-Control": "public, max-age=120",
               "X-Frame-Time": lastFrameTime.toString()
             }
           });
-          ctx.waitUntil(cache.put(CACHE_URL, cacheResponse.clone()));
+          
+          ctx.waitUntil(cache.put(cacheKey, cacheResponse));
         }
 
         return new Response(JSON.stringify({ 
@@ -79,20 +86,8 @@ export default {
     // 3. ปลุกกล้องให้สตรีมเร็ว (Wake-up) เมื่อมีคนกดดูจากมือถือ
     // ==========================================
     if (url.pathname === "/wake") {
-      wakeUntil = Date.now() + 180000; // สตรีมเร็วต่อเนื่อง 3 นาที (180s)
+      wakeUntil = Date.now() + 180000; // สตรีมเร็วต่อเนื่อง 3 นาที
       return new Response(JSON.stringify({ success: true, wakeUntil: wakeUntil }), {
-        status: 200,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-      });
-    }
-
-    // API ให้กล้องเช็คว่าต้องสตรีมเร็วหรือไม่
-    if (url.pathname === "/check-wake") {
-      const shouldStream = Date.now() < wakeUntil;
-      return new Response(JSON.stringify({ 
-        wake: shouldStream,
-        remainingSec: Math.max(0, Math.round((wakeUntil - Date.now()) / 1000))
-      }), {
         status: 200,
         headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
       });
@@ -102,7 +97,7 @@ export default {
     // 4. หน้าเว็บ/มือถือ 4G/5G ดึงภาพสด (GET /latest.jpg)
     // ==========================================
     if (request.method === "GET" && (url.pathname === "/latest.jpg" || url.pathname === "/frame")) {
-      // 4.1 ลองดึงจากหน่วยความจำ RAM ก่อน
+      // 4.1 ตรวจสอบใน Memory RAM ก่อน
       if (memoryFrame) {
         return new Response(memoryFrame, {
           status: 200,
@@ -115,32 +110,34 @@ export default {
         });
       }
 
-      // 4.2 ถ้าใน RAM ยังไม่มี ลองดึงจาก Edge Cache
-      const cached = await cache.match(CACHE_URL);
-      if (cached) {
-        return new Response(cached.body, {
-          status: 200,
-          headers: {
-            "Content-Type": "image/jpeg",
-            "Access-Control-Allow-Origin": "*",
-            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"
-          }
-        });
+      // 4.2 ตรวจสอบใน Edge Cache
+      try {
+        const cacheKey = getCacheKey(request);
+        const cached = await cache.match(cacheKey);
+        if (cached) {
+          return new Response(cached.body, {
+            status: 200,
+            headers: {
+              "Content-Type": "image/jpeg",
+              "Access-Control-Allow-Origin": "*",
+              "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"
+            }
+          });
+        }
+      } catch (e) {
+        // Cache read fallback
       }
 
-      // 4.3 หากกล้องเพิ่งเปิดและยังไม่ได้ยิงภาพแรก ส่งรูปกราฟิก Placeholder กลับไปแทน 404
+      // 4.3 หากยังไม่มีรูปภาพใดๆ ให้ส่ง Placeholder กลับไป
       const placeholderSvg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480">
-          <rect width="640" height="480" fill="#0f172a"/>
-          <text x="50%" y="45%" text-anchor="middle" fill="#38bdf8" font-family="sans-serif" font-size="22" font-weight="bold">
+        <svg xmlns="http://www.w3.org/2000/svg" width="400" height="296" viewBox="0 0 400 296">
+          <rect width="400" height="296" fill="#0f172a"/>
+          <text x="50%" y="45%" text-anchor="middle" fill="#38bdf8" font-family="sans-serif" font-size="16" font-weight="bold">
             📡 FLOOD-CAM TANYONGMAT
           </text>
-          <text x="50%" y="55%" text-anchor="middle" fill="#94a3b8" font-family="sans-serif" font-size="16">
-            กำลังรอเชื่อมต่อสัญญาณจากกล้อง ESP32-CAM...
+          <text x="50%" y="58%" text-anchor="middle" fill="#94a3b8" font-family="sans-serif" font-size="12">
+            กำลังรอรับภาพจากกล้อง ESP32-CAM...
           </text>
-          <circle cx="320" cy="320" r="16" fill="none" stroke="#38bdf8" stroke-width="4" stroke-dasharray="25 25">
-            <animateTransform attributeName="transform" type="rotate" from="0 320 320" to="360 320 320" dur="1.5s" repeatCount="indefinite"/>
-          </circle>
         </svg>
       `;
 
@@ -162,11 +159,12 @@ export default {
       const isOnline = lastFrameTime > 0 && ageMs < 15000;
 
       return new Response(JSON.stringify({
-        project: "Flood-CAM Edge Relay v2",
+        project: "Flood-CAM Edge Relay v3",
         municipality: "เทศบาลตำบลตันหยงมัส",
         cameraOnline: isOnline,
         lastSeenMsAgo: lastFrameTime > 0 ? ageMs : null,
         totalFrames: frameCount,
+        hasMemoryFrame: memoryFrame !== null,
         isWakeActive: Date.now() < wakeUntil
       }), {
         status: 200,
@@ -177,7 +175,7 @@ export default {
       });
     }
 
-    return new Response("🚀 Flood-CAM Cloudflare Fast Edge Relay v2 Running!", { 
+    return new Response("🚀 Flood-CAM Cloudflare Fast Edge Relay v3 Running!", { 
       status: 200,
       headers: { "Content-Type": "text/plain; charset=utf-8", "Access-Control-Allow-Origin": "*" }
     });

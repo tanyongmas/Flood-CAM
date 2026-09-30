@@ -476,28 +476,32 @@ function startCloudSnapshotRelay() {
       if (!isStreaming || currentStreamMode !== 'cloud' || isEdgeFetching) return;
       isEdgeFetching = true;
 
+      const watchdog = setTimeout(() => {
+        isEdgeFetching = false;
+      }, 600);
+
       const preImg = new Image();
       preImg.onload = () => {
-        if (!isStreaming || currentStreamMode !== 'cloud') {
-          isEdgeFetching = false;
-          return;
-        }
+        clearTimeout(watchdog);
+        isEdgeFetching = false;
+        if (!isStreaming || currentStreamMode !== 'cloud') return;
+
         streamImg.src = preImg.src;
         streamImg.style.display = 'block';
         placeholder.style.display = 'none';
 
         frameCounter++;
         const elapsed = (Date.now() - fpsStart) / 1000;
-        if (elapsed >= 2.0) {
+        if (elapsed >= 1.5) {
           currentFps = (frameCounter / elapsed).toFixed(1);
           frameCounter = 0;
           fpsStart = Date.now();
         }
-        statusText.innerText = `⚡ Cloudflare Fast Edge (${currentFps} FPS • ความหน่วงต่ำ)`;
-        isEdgeFetching = false;
+        statusText.innerText = `⚡ Cloudflare Fast Edge (${currentFps} FPS • สดจากกล้อง)`;
       };
 
       preImg.onerror = () => {
+        clearTimeout(watchdog);
         isEdgeFetching = false;
         statusText.innerText = '⚡ Cloudflare Edge: กำลังรอเฟรมภาพสดจากกล้อง...';
       };

@@ -38,10 +38,10 @@
 SemaphoreHandle_t camMutex = NULL;
 
 // ======================= [ค่าเริ่มต้นเครือข่าย Wi-Fi] =======================
-const char* DEFAULT_WIFI_SSID     = "TMSTUDIO";
-const char* DEFAULT_WIFI_PASSWORD = "026830TM";
+const char* DEFAULT_WIFI_SSID     = "199X";
+const char* DEFAULT_WIFI_PASSWORD = "5910110106";
 
-const char* BACKUP_WIFI_SSID      = "199X";
+const char* BACKUP_WIFI_SSID      = "199X1";
 const char* BACKUP_WIFI_PASSWORD  = "5910110106";
 
 String currentSSID = DEFAULT_WIFI_SSID;
