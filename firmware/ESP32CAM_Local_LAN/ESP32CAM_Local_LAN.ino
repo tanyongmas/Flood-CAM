@@ -396,11 +396,11 @@ void uploadSnapshotToCloud() {
     return;
   }
 
-  // แนวทาง C1: ส่ง Binary JPEG แท้ๆ ไปยัง Cloudflare Worker (เร็ว 5-10 FPS ไร้ Base64)
+  // แนวทาง C1: ส่ง Binary JPEG แท้ๆ ไปยัง Cloudflare Worker
   if (USE_CLOUDFLARE_EDGE && strlen(CF_WORKER_HOST) > 5 && String(CF_WORKER_HOST).indexOf("workers.dev") > 0) {
     WiFiClientSecure client;
     client.setInsecure();
-    client.setTimeout(3);
+    client.setTimeout(2);
 
     if (client.connect(CF_WORKER_HOST, 443)) {
       client.println("POST /upload HTTP/1.1");
@@ -413,18 +413,24 @@ void uploadSnapshotToCloud() {
 
       // ส่ง Binary Buffer ก้อนภาพดิบ
       client.write(fbBuf, fbLen);
+      client.flush();
       
-      // อ่านคำตอบกลับจาก Cloudflare Worker เพื่ออัปเดตสถานะปลุกสตรีม
-      while (client.connected() || client.available()) {
-        String line = client.readStringUntil('\n');
-        if (line.indexOf("\"isWake\":true") >= 0) {
-          isStreamingRequested = true;
-          lastStreamRequestTime = millis();
+      // รอการตอบกลับไม่เกิน 300ms โดยคืน CPU ให้ระบบเสมอ ป้องกัน Watchdog Trigger
+      unsigned long waitStart = millis();
+      while (!client.available() && (millis() - waitStart < 300)) {
+        vTaskDelay(pdMS_TO_TICKS(10)); // Yield ให้ FreeRTOS IDLE0 Task
+      }
+
+      if (client.available()) {
+        String resp = client.readStringUntil('\n');
+        if (resp.indexOf("200") >= 0) {
+          Serial.printf("[Cloudflare Edge] Frame pushed (%u KB)\n", (unsigned int)(fbLen / 1024));
         }
       }
       client.stop();
     }
     xSemaphoreGive(camMutex);
+    vTaskDelay(pdMS_TO_TICKS(30)); // คืน CPU ให้ IDLE0 Task
     return;
   }
 
@@ -572,38 +578,19 @@ void cloudSyncTask(void *pvParameters) {
         client.stop();
       }
 
-      // ตรวจสอบคำสั่งปลุกสตรีมจาก Cloudflare Worker ทุก 2.5 วินาที เมื่ออยู่ใน Standby
-      if (USE_CLOUDFLARE_EDGE && strlen(CF_WORKER_HOST) > 5 && String(CF_WORKER_HOST).indexOf("workers.dev") > 0) {
-        WiFiClientSecure cfClient;
-        cfClient.setInsecure();
-        cfClient.setTimeout(2);
-        if (cfClient.connect(CF_WORKER_HOST, 443)) {
-          cfClient.println("GET /check-wake HTTP/1.1");
-          cfClient.print("Host: "); cfClient.println(CF_WORKER_HOST);
-          cfClient.println("Connection: close");
-          cfClient.println();
-          while (cfClient.connected() || cfClient.available()) {
-            String line = cfClient.readStringUntil('\n');
-            if (line.indexOf("\"wake\":true") >= 0) {
-              isStreamingRequested = true;
-              lastStreamRequestTime = millis();
-              Serial.println("[Cloudflare Trigger] Fast Stream Activated via Edge Wake!");
-              break;
-            }
-          }
-          cfClient.stop();
-        }
-      }
     }
 
     // 3. อัปโหลดภาพขึ้น Cloud:
-    // - ถ้ามีคนกดดู (isStreamingRequested): ส่งเร็ว 250ms (4-5 FPS)
-    // - ถ้าไม่มีคนดู (Standby): ส่ง 1 ภาพทุก 5 วินาที เพื่อให้ Edge Server มีภาพสดพร้อมแสดงตลอดเวลา (ไม่ 404)
-    unsigned long pushInterval = isStreamingRequested ? 250 : 5000;
+    // - ถ้ามีคนกดดู (isStreamingRequested): ส่งทุก 800ms (~1.2 FPS) เพื่อความเสถียร ไม่ให้ CPU Overheat
+    // - ถ้าอยู่ใน Standby: ส่ง 1 ภาพทุก 6 วินาที เพื่อให้หน้าเว็บมีภาพสดเสมอ
+    unsigned long pushInterval = isStreamingRequested ? 800 : 6000;
     if (now - lastSnapshotPush >= pushInterval) {
       lastSnapshotPush = now;
       uploadSnapshotToCloud();
     }
+
+    // คืนเวลา CPU ให้ FreeRTOS IDLE0 Task รีเซ็ต Watchdog Timer เสมอ
+    vTaskDelay(pdMS_TO_TICKS(50));
   }
 }
 
